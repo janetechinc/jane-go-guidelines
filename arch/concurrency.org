@@ -1,0 +1,624 @@
+Often Go is chosen for a project because of its concurrency features. The Go
+team have gone to great lengths to make concurrency in Go cheap (in terms of
+hardware resources) and performant, however it is possible to use Go’s
+concurrency features to write code which is neither performant or reliable. With
+the time I have left I want to leave you with some advice for avoid some of the
+pitfalls that come with Go’s concurrency features.
+
+Go features first class support for concurrency with channels, and the =select=
+and =go= statements. If you’ve learnt Go formally from a book or training course,
+you might have noticed that the concurrency section is always one of the last
+you’ll cover. This workshop is no different, I have chosen to cover concurrency
+last, as if it is somehow additional to the regular the skills a Go programmer
+should master.
+
+There is a dichotomy here; Go’s headline feature is our simple, lightweight
+concurrency model. As a product, our language almost sells itself on this
+feature alone. On the other hand, there is a narrative that concurrency isn’t
+actually that easy to use, otherwise authors wouldn’t make it the last chapter
+in their book.
+** Stuff To Crib From :noexport:
+https://go.dev/blog/waza-talk
+https://dave.cheney.net/2013/04/30/curious-channels
+
+** Channel Axioms
+Go programmers quickly grasp the idea of a channel as a queue of values and are
+comfortable with the notion that channel operations may block when full or
+empty. In this section I want to explore several of the less common properties
+of channels.
+
+*** A send to a nil channel blocks forever
+It can be surprising to newcomers that is a send on a nil channel blocks forever.
+
+#+BEGIN_SRC go
+func main() {
+	var c chan string
+	c <- "let's get started" // deadlock!
+}
+#+END_SRC
+
+This example program will deadlock on line 5 because the zero value for an
+uninitialised channel is nil. You cannot send to a channel that has not been
+initialised.
+
+*** A receive from a nil channel blocks forever
+Similarly receiving from a nil channel blocks the receiver forever.
+
+#+BEGIN_SRC go
+func main() {
+	var c chan string
+	fmt.Println(<-c) // .....deadlock!
+}
+#+END_SRC
+
+So why does this happen? Here is one possible explanation:
+
+ - The size of a channel’s buffer is not part of its type declaration, so it
+   must be part of the channel’s value.
+ - If the channel is not initialised then its buffer size will be zero.
+ - If the size of the channel’s buffer is zero, then the channel is unbuffered.
+ - If the channel is unbuffered, then a send will block until another goroutine
+   is ready to receive.
+ - If the channel is nil then the sender and receiver have no reference to each
+   other; they are both blocked waiting on independent channels and will never
+   unblock.
+*** A send to a closed channel panics
+The following program will likely panic as the first goroutine to reach 10 will
+close the channel before its siblings have time to finish sending their values.
+
+#+BEGIN_SRC go
+func main() {
+        var c = make(chan int, 100)
+        for i := 0; i < 10; i++ {
+                go func() {
+                        for j := 0; j < 10; j++ {
+                                c <- j
+                        }
+                        close(c)
+                }()
+        }
+        for i := range c {
+                fmt.Println(i)
+        }
+}
+#+END_SRC
+
+So why isn’t there a version of close that lets you check if a channel is
+closed? Something like this:
+
+#+BEGIN_SRC go
+if !isClosed(c) {
+        // c isn't closed, send the value
+        c <- v
+}
+#+END_SRC
+
+But this function would have an inherent race. Someone may close the channel
+after we checked =isClosed(c)= but before the code gets to =c ← v=.
+
+One way to think about how this is possible is to imagine that goroutines work
+in different universes. They cannot observe each other unless they
+communicate. Because they cannot observe each other except for these
+communication points, time moves differently for each goroutine (given we cannot
+prove the opposite; time moves at the same rate for each goroutine, we must
+admit that it is /possible/) hence you cannot make statements like "a small amount
+of time" when talking about the interactions of different goroutines. There is
+no /happens before/ relationship with goroutines unless they explicitly
+communicate.
+
+This is not just a theoretical bun fight, it is easily demonstrable that the
+operating system thread backing any goroutine may be rescheduled at any time by
+the operating system. A different thread hosting a different goroutine can move
+ahead, relative to the sleeping thread, in time easily able to execute the
+channel close operation before the original thread is revived to attempt to send
+on the now closed channel.
+
+If you need to ensure that only one goroutine closes a channel you must create a
+point of coordination /before/ the close operation.
+
+#+BEGIN_SRC go
+func main() {
+	var c = make(chan int, 100)
+	var mu sync.Mutex
+	var closed bool
+	for i := 0; i < 10; i++ {
+		go func() {
+			for j := 0; j < 10; j++ {
+				c <- j
+			}
+			mu.Lock()
+			if !closed {
+				close(c)
+				closed = true
+			}
+			mu.Unlock()
+		}()
+	}
+	for i := range c {
+		fmt.Println(i)
+	}
+}
+#+END_SRC
+
+***  A receive from a closed channel returns the zero value immediately
+The final case is the inverse of the previous. Once a channel is closed /and/ all
+values drained from its buffer, the channel will always return zero values
+immediately.
+
+#+BEGIN_SRC go
+func main() {
+	c := make(chan int, 3)
+	c <- 1
+	c <- 2
+	c <- 3
+	close(c)
+	for i := 0; i < 4; i++ {
+		fmt.Printf("%d ", <-c) // prints 1 2 3 0
+	}
+}
+#+END_SRC
+
+When consuming values from a channel until it closes, the better solution is to
+use a for range style loop.
+
+#+BEGIN_SRC go
+for v := range c {
+	// do something with v
+}
+#+END_SRC
+
+Which is just syntactic sugar over the more verbose
+
+#+BEGIN_SRC go
+for v, ok := <- c; ok ; v, ok = <- c {
+        // do something with v
+}
+#+END_SRC
+
+These two statements are equivalent in function, and demonstrate what for range
+is doing under the hood.
+
+*** Prefer channels with a size of zero or one
+When dealing with an unknown producer or consumer choose a buffer size of zero
+or one.
+
+A buffer size of zero is ideal for coordination. A buffer size of one is idea to
+permit the sender to deposit the value without blocking and move on.
+
+A buffer size greater than one is useful in the case where you know that exact
+number of values that will be deposited in the channel /before/ it is drained. The
+common case is multiple workers operating in parallel, and a coordinator waiting
+on that result.
+
+The most reasonable channels sizes are usually zero and one. Most other sizes
+are /guesses/. When you guess incorrectly, the program is unreliable.
+*** Keep yourself busy or do the work yourself
+What is the problem with this program?
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, GopherCon SG")
+	})
+	go func() {
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	for {
+	}
+}
+#+END_SRC
+
+The program does what we intended, it serves a simple web server. However it
+also does something else at the same time, it wastes CPU in an infinite
+loop. This is because the =for{}= on the last line of main is going to block the
+main goroutine because it doesn’t do any IO, wait on a lock, send or receive on
+a channel, or otherwise communicate with the scheduler.
+
+As the Go runtime is mostly cooperatively scheduled, this program is going to
+spin fruitlessly on a single CPU, and may eventually end up live-locked.
+
+How could we fix this? Here’s one suggestion.
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"runtime"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, GopherCon SG")
+	})
+	go func() {
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	for {
+		runtime.Gosched()
+	}
+}
+#+END_SRC
+
+This might look silly, but it’s a common common solution I see in the wild. It’s
+symptomatic of not understanding the underlying problem.
+
+Now, if you’re a little more experienced with go, you might instead write
+something like this.
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, GopherCon SG")
+	})
+	go func() {
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	select {}
+}
+#+END_SRC
+
+An empty select statement will block forever. This is a useful property because
+now we’re not spinning a whole CPU just to call =runtime.GoSched()=. However,
+we’re only treating the symptom, not the cause.
+
+I want to present to you another solution, one which has hopefully already
+occurred to you. Rather than run =http.ListenAndServe= in a goroutine, leaving us
+with the problem of what to do with the main goroutine, simply run
+=http.ListenAndServe= on the main goroutine itself.
+
+If the =main.main= function of a Go program returns then the Go program will
+unconditionally exit no matter what other goroutines started by the program over
+time are doing.
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, GopherCon SG")
+	})
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal(err)
+	}
+}
+#+END_SRC
+
+So this is my first piece of advice: if your goroutine cannot make progress
+until it gets the result from another, oftentimes it is simpler to just do the
+work yourself rather than to delegate it.
+
+This often eliminates a lot of state tracking and channel manipulation required
+to plumb a result back from a goroutine to its initiator.
+
+Many Go programmers overuse goroutines, especially when they are starting
+out. As with all things in life, moderation is the key to success.
+
+** Leave Concurrency To The Caller
+What is the difference between these two APIs?
+
+#+BEGIN_SRC go
+// ListDirectory returns the contents of dir.
+func ListDirectory(dir string) ([]string, error)
+
+// ListDirectory returns a channel over which
+// directory entries will be published. When the list
+// of entries is exhausted, the channel will be closed.
+func ListDirectory(dir string) chan string
+#+END_SRC
+
+The obvious differences are the first example reads a directory into a slice
+then returns the whole slice, or an error if something went wrong. This happens
+synchronously, the caller of =ListDirectory= blocks until all directory entries
+have been read. Depending on how large the directory, this could take a long
+time, and could potentially allocate a lot of memory building up the slide of
+directory entry names.
+
+Lets look at the second example. This is a little more Go like, =ListDirectory=
+returns a channel over which directory entries will be passed. When the channel
+is closed, that is your indication that there are no more directory entries. As
+the population of the channel happens /after/ =ListDirectory= returns, =ListDirectory=
+is probably starting a goroutine to populate the channel.
+
+It’s not necessary for the second version to actually use a Go routine; it could
+allocate a channel sufficient to hold all the directory entries without
+blocking, fill the channel, close it, then return the channel to the caller. But
+this is unlikely, as this would have the same problems with consuming a large
+amount of memory to buffer all the results in a channel.
+
+The channel version of =ListDirectory= has two further problems:
+
+ - By using a closed channel as the signal that there are no more items to
+   process there is no way for =ListDirectory= to tell the caller that the set of
+   items returned over the channel is incomplete because an error was
+   encountered partway through. There is no way for the caller to tell the
+   difference between an /empty directory/ and an /error/ to read from the directory
+   entirely. Both result in a channel returned from =ListDirectory= which appears
+   to be closed immediately.
+ - The caller must continue to read from the channel until it is closed because
+   that is the only way the caller can know that the goroutine which was started
+   to fill the channel has stopped. This is a serious limitation on the use of
+   =ListDirectory=, the caller has to spend time reading from the channel even
+   though it may have received the answer it wanted. It is probably more
+   efficient in terms of memory usage for medium to large directories, but this
+   method is no faster than the original slice based method.
+
+The solution to the problems of both implementations is to use a callback, a
+function that is called in the context of each directory entry as it is
+executed.
+
+#+BEGIN_SRC go
+func ListDirectory(dir string, fn func(string))
+#+END_SRC
+
+Not surprisingly this is how the =filepath.WalkDir= function works.
+
+If your function starts a goroutine you must provide the caller with a way to
+explicitly stop that goroutine. It is often easier to leave decision to execute
+a function asynchronously to the caller of that function.
+
+** Never Start A Goroutine Without Knowing When It Will Stop
+Perhaps fitting for the final topic in this presentation, we’re going to talk
+about stopping.
+
+A previous example showed using a goroutine when one wasn’t really
+necessary. But one of the driving reasons for using Go is the first class
+concurrency features the language offers. Indeed there are many instances where
+you want to exploit the parallelism available in your hardware. To do so, you
+must use goroutines.
+
+This simple application serves http traffic on two different ports, port 8080
+for application traffic and port 8001 for access to the =/debug/pprof= endpoint.
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"fmt"
+	"net/http"
+	_ "net/http/pprof"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
+		fmt.Fprintln(resp, "Hello, QCon!")
+	})
+	go http.ListenAndServe("127.0.0.1:8001", http.DefaultServeMux) // debug
+	http.ListenAndServe("0.0.0.0:8080", mux)                       // app traffic
+}
+#+END_SRC
+
+Although this program isn’t very complicated, it represents the basis of a real
+application.
+
+There are a few problems with the application as it stands which will reveal
+themselves as the application grows, so lets address a few of them now.
+
+#+BEGIN_SRC go
+func serveApp() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
+		fmt.Fprintln(resp, "Hello, QCon!")
+	})
+	http.ListenAndServe("0.0.0.0:8080", mux)
+}
+
+func serveDebug() {
+	http.ListenAndServe("127.0.0.1:8001", http.DefaultServeMux)
+}
+
+func main() {
+	go serveDebug()
+	serveApp()
+}
+#+END_SRC
+
+By breaking the =serveApp= and =serveDebug= handlers out into their own functions
+we’ve decoupled them from =main.main=. We’ve also followed the advice from above
+and make sure that =serveApp= and =serveDebug= leave their concurrency to the
+caller.
+
+But there are some operability problems with this program. If =serveApp= returns
+then =main.main= will return causing the program to shutdown and be restarted by
+whatever process manager you’re using.
+
+Just as functions in Go leave concurrency to the caller, applications should
+leave the job of monitoring their status and restarting them if they fail to the
+program that invoked them. Do not make your applications responsible for
+restarting themselves, this is a procedure best handled from outside the
+application.
+
+However, =serveDebug= is run in a separate goroutine and if it returns just that
+goroutine will exit while the rest of the program continues on. Your operations
+staff will not be happy to find that they cannot get the statistics out of your
+application when they want too because the =/debug= handler stopped working a long
+time ago.
+
+What we want to ensure is that if any of the goroutines responsible for serving
+this application stop, we shut down the application.
+
+#+BEGIN_SRC go
+func serveApp() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
+		fmt.Fprintln(resp, "Hello, QCon!")
+	})
+	if err := http.ListenAndServe("0.0.0.0:8080", mux); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func serveDebug() {
+	if err := http.ListenAndServe("127.0.0.1:8001", http.DefaultServeMux); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func main() {
+	go serveDebug()
+	go serveApp()
+	select {}
+}
+#+END_SRC
+
+Now =serverApp= and =serveDebug= check the error returned from =ListenAndServe= and
+call =log.Fatal= if required. Because both handlers are running in goroutines, we
+park the main goroutine in a =select{}=.
+
+This approach has a number of problems:
+
+ - If =ListenAndServer= returns with a =nil= error, =log.Fatal= won’t be called and
+   the HTTP service on that port will shut down without stopping the
+   application.
+ - =log.Fatal= calls =os.Exit= which will unconditionally exit the program; defers
+   won’t be called, other goroutines won’t be notified to shut down, the program
+   will just stop. This makes it difficult to write tests for those functions.
+
+Only use =log.Fatal= from =main.main=.
+
+What we’d really like is to pass any error that occurs back to the originator of
+the goroutine so that it can know why the goroutine stopped, can shut down the
+process cleanly.
+
+#+BEGIN_SRC go
+func serveApp() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
+		fmt.Fprintln(resp, "Hello, QCon!")
+	})
+	return http.ListenAndServe("0.0.0.0:8080", mux)
+}
+
+func serveDebug() error {
+	return http.ListenAndServe("127.0.0.1:8001", http.DefaultServeMux)
+}
+
+func main() {
+	done := make(chan error, 2)
+	go func() {
+		done <- serveDebug()
+	}()
+	go func() {
+		done <- serveApp()
+	}()
+
+	for i := 0; i < cap(done); i++ {
+		if err := <-done; err != nil {
+			fmt.Println("error: %v", err)
+		}
+	}
+}
+#+END_SRC
+
+We can use a channel to collect the return status of the goroutine. The size of
+the channel is equal to the number of goroutines we want to manage so that
+sending to the =done= channel will not block, as this will block the shutdown the
+of goroutine, causing it to leak.
+
+As there is no way to safely close the =done= channel we cannot use the =for range=
+idiom to loop of the channel until all goroutines have reported in, instead we
+loop for as many goroutines we started, which is equal to the capacity of the
+channel.
+
+Now we have a way to wait for each goroutine to exit cleanly and log any error
+they encounter. All that is needed is a way to forward the shutdown signal from
+the first goroutine that exits to the others.
+
+It turns out that asking a =http.Server= to shut down is a little involved, so
+I’ve spun that logic out into a helper function. The =serve= helper takes an
+address and =http.Handler=, similar to =http.ListenAndServe=, and also a stop
+channel which we use to trigger the =Shutdown= method.
+
+#+BEGIN_SRC go
+func serve(addr string, handler http.Handler, stop <-chan struct{}) error {
+	s := http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+
+	go func() {
+		<-stop // wait for stop signal
+		s.Shutdown(context.Background())
+	}()
+
+	return s.ListenAndServe()
+}
+
+func serveApp(stop <-chan struct{}) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
+		fmt.Fprintln(resp, "Hello, QCon!")
+	})
+	return serve("0.0.0.0:8080", mux, stop)
+}
+
+func serveDebug(stop <-chan struct{}) error {
+	return serve("127.0.0.1:8001", http.DefaultServeMux, stop)
+}
+
+func main() {
+	done := make(chan error, 2)
+	stop := make(chan struct{})
+	go func() {
+		done <- serveDebug(stop)
+	}()
+	go func() {
+		done <- serveApp(stop)
+	}()
+
+	var stopped bool
+	for i := 0; i < cap(done); i++ {
+		if err := <-done; err != nil {
+			fmt.Println("error: %v", err)
+		}
+		if !stopped {
+			stopped = true
+			close(stop)
+		}
+	}
+}
+#+END_SRC
+
+Now, each time we receive a value on the =done= channel, we close the stop channel
+which causes all the goroutines waiting on that channel to shut down their
+=http.Server=. This in turn will cause all the remaining =ListenAndServe= goroutines
+to return. Once all the goroutines we started have stopped, =main.main= returns
+and the process stops cleanly.
+** Pitfalls :noexport:
+*** Data Races
+https://dave.cheney.net/2014/06/27/ice-cream-makers-and-data-races
+ 

@@ -1,0 +1,139 @@
+Welcome to the Jane Go Code Guidelines!
+
+There are a couple of reasons this document has come into being.
+
+The first is that as great as the documentation provided by the Go team is,
+there are still places where we might want to be more prescriptive with how we
+use the various features available in Go.
+
+Second, there are places the documentation provided by the Go team don't
+cover. As such, there are a number of "best practices" -- often referred to as
+"idiomatic" Go -- that have grown up around Go.
+
+This document collects these best practices and conventions into a single
+document for ease of reading.
+
+** A Quick Heads-Up
+:PROPERTIES:
+:ID:       382e5fc0-987e-4787-8dcf-bf7896e7edc3
+:END:
+
+Much of this document is sourced ( aka "cribbed" ) from multiple sources. All
+such sources are referenced in a bibliography at the end of document.
+
+That said, everything in this document are things the team at Jane has agreed
+are things we agree with. They're all things we believe will help us write good,
+clear, maintainable code.
+
+** On "Idiomatic" Go
+
+The authors of this document eschew the use of the phrase "idiomatic Go".
+
+To say that something is idiomatic is to say that it follows the style of the
+time. If something is not idiomatic, it is not following the prevailing
+style. It is unfashionable.
+
+More importantly, to say to someone that their code is not idiomatic does not
+explain /why/ it’s not idiomatic. Why is this? Like all truths, the answer is
+found in the dictionary.
+
+#+BEGIN_DEFINITION
+idiom (noun): a group of words established by usage as having a meaning not
+deducible from those of the individual words.
+#+END_DEFINITION
+
+Idioms are hallmarks of shared values. Idiomatic Go is not something you learn
+from a book, it’s something that you acquire by being part of a community.
+
+#+BEGIN_QUOTE
+My concern with the mantra of idiomatic Go is, in many ways, it can be
+exclusionary. It’s saying “you can’t sit with us.” After all, isn’t that what we
+mean when critique of someone’s work as non-idiomatic? They didn’t do It
+right. It doesn’t look right. It doesn’t follow the style of time.
+
+I offer that idiomatic Go is not a suitable mechanism for teaching how to write
+good Go code because it is defined, fundamentally, by telling someone they did
+it wrong. Wouldn’t it be better if the advice we gave didn’t alienate the author
+right at the point they were most willing to accept it?
+
+ -- Dave Cheney
+#+END_QUOTE
+
+So while we technically want to be writing "idiomatic Jane Go code", we argue
+that Go developers should be using words that more clearly explain what we're
+trying to do.
+
+If you work at Jane you have to read this document, you don't get a choice. But
+something the authors hope we can all agree on is that we should always be
+trying to do the following:
+
+ - write clear, easy to understand code
+ - write simple, easy to maintain code
+ - write code that further enables productivity
+
+Funnily enough, those are pretty close to what you could describe as the [[id:e276f32e-34c3-4519-bf53-3a419a781c59][guiding
+principles]] of Go -- which should also be the guiding principles of Jane when we
+write Go code.
+
+So instead, rather than just saying code isn't "idiomatic", point them to this
+guideline or any of the sources linked within to explain how someone can improve
+their code.
+
+** Language Notes
+As of the date writing this document ( March 25, 2022 ), Go 1.18 has been out for
+ten days. One of the changes was the introduction of =any=, which is an /alias/ for
+=interface{}=. This was introduced as part of the general release of generics.
+
+So in this document I'll be using =any= -- just know that it's an alias for
+=interface{}= and you should be good.
+
+As new features are introduced to Go in the future, we will endeavor to update
+this document with guidelines on how to use that feature. For some features this
+will be easy and quick; other features will require some experimentation and
+waiting before we decide on how to use said features. In other words: if a
+brand-new language feature in Go isn't covered here, and you think it should be
+covered, AND you work at Jane: open an issue or a PR!
+
+If you don't work at Jane, sorry!
+
+** Supported Go Version
+Speaking of the latest version of Go...
+
+Go only supports the two newest versions. At the time of this writing that's Go
+1.17 and Go 1.18. Jane should follow the same practice, always updating the =go=
+line in =go.mod= to point to the latest version.
+
+This doesn't mean we have to *use* new features from new releases. The backwards
+compatibility guarantee means that any code we write /should/ continue to work so
+long as we're still using Go 1. The only exceptions is code that was
+unintentionally relying on a bug that has been fixed, or a new feature still in
+it's shake-down phase ( such as generics ).
+
+While this does mean that we're always able to use new features, the main reason
+for this policy isn't that. The reason is that new versions of Go often include
+large productivity gains and optimizations. For example, in [[https://go.dev/doc/go1.18#runtime][Go 1.18, the runtime
+and the compiler have been updated]] to improve speed and memory usage. Previous
+versions of Go have seen large improvements to both speed or memory usage,
+sometimes both.
+
+By keeping up with the latest releases we open up the possibility that our code
+will see speed & memory improvements without having to change anything except a
+single line in our =go.mod= files.
+
+In cases where the newest version has features that need some exploration before
+we figure out how we want to use them at Jane -- such as generics -- I suggest
+we allow repositories to stay on the previous version when a new version is
+released. This would be preferred over stating we /can't/ use a new version
+because we haven't fully evaluated it yet. The thinking here is that the only
+way to evaluate a new version is to use it, and we can't use it if the policy is
+"wait and see".
+
+This way teams & repositories that are comfortable with the risk of immediately
+upgrading to a new version of Go can do so, while other teams/repos can hold off
+to see how things shake out. This grace period shouldn't be indefinite,
+however. At the very least when a new version of Go is released teams will /have/
+to upgrade; ie, teams using Go 1.17 now can use that until Go 1.19 is released
+-- at which point they have to upgrade to Go 1.18, as only Go 1.18 and 1.19 will
+be supported once Go 1.19 comes out. I would recommend that teams don't push
+upgrading versions until forced to by a new Go release, however.
+

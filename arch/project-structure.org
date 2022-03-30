@@ -1,0 +1,209 @@
+As you've probably noticed, Go doesn't have any kind of recommended folder
+structure -- and anyone who tells you otherwise is lying.
+
+Go doesn't work like Ruby on Rails, with a somewhat rigid folder structure that
+defines where stuff like models or views or controllers go.
+
+However, that doesn't mean Go projects have /no/ structure. Far from it! At the
+very least, we need folders in order to logically separate packages. You can't
+have two files with different =package= declarations in the same folder, the
+compiler will complain. So Go has /some/ structure: packages.
+
+So far we've talked about what goes into good package design, but haven't
+touched on package layout -- how the folders and everything should be laid
+out. That's because they are mostly separate topics.
+
+The overlap has mostly do with with naming and ensuring you're organizing your
+packages in a way that makes sense. For example, putting packages that implement
+a different version of a "parent" package -- such as the =encoding= package from
+the standard library. =encoding= defines four interfaces, and then there are
+eleven sub-packages that do various kinds of encoding. These include
+=encoding/json=, =encoding/base64=, and =encoding/csv=. If you look closely though,
+not all the sub-packages define types that fulfill the interfaces defined in
+=encoding=.
+
+Why is that? Well, all the sub-packages do deal with encoding. Additionally,
+there's nothing that states sub-packages /have/ to use what's defined in the
+"parent" package. Think of it from the perspective from naming; =encoding/base64=
+is pretty clear what it does: encode and decode base64 encoded data. If =base64=
+was just a top-level standard library package, is that as clear? Would the name
+maybe have to change to =base64Encoding= to make it clear what the package is for?
+But going back to our guiding principles, which is simpler; =encoding/base64= or
+=base64Encoding=. Well, if you've only got one encoder and it's the base64
+version, you could make an argument for =base64Encoding=. Maybe.
+
+Anyways, let's talk about some other things related to project structure.
+** =internal=, Not =pkg=
+As [[https://dave.cheney.net/2019/10/06/use-internal-packages-to-reduce-your-public-api-surface][Dave Cheney explains]], the =pkg= folder is a holdover from the early days of Go:
+
+#+BEGIN_QUOTE
+In the beginning, before the go tool, before Go 1.0, the Go distribution stored
+the standard library in a subdirectory called pkg/ and the commands which built
+upon it in cmd/. This wasn’t so much a deliberate taxonomy but a by product of
+the original make based build system. In September 2014, the Go distribution
+dropped the pkg/ subdirectory, but then this tribal knowledge had set root in
+large Go projects and continues to this day.
+#+END_QUOTE
+
+So rather than a choice, it was a constraint. And it's [[https://dave.cheney.net/practical-go/presentations/gophercon-singapore-2019.html#_project_structure][not even recommended any
+more]]:
+
+#+BEGIN_QUOTE
+Possibly because of the early use of a pkg/ directory to hold package—​and the
+corresponding cmd/ directory to hold commands (package main) this practice of
+putting your packages in an empty pkg/ directory has spread to other Go
+projects. This practice was never a recommendation, just a result of the
+original Makefile based build system.
+
+In September 2014, the stdlib moved away from storing package code in an
+otherwise empty pkg/ directory, and you should follow their lead. Other than a
+superficial symetary with cmd/ putting packages in a pkg/ directory is needless
+boilerplate and distracts from the potentially more useful internal/ directory.
+#+END_QUOTE
+
+Side note: ignore both the repositories owned by [[https://github.com/golang-standards][golang-standards]]. That
+organization has no official standing, and in some cases actively recommend
+anti-patterns like the =pkg= folder.
+
+However, there is something better that we can use instead, which Dave
+mentioned at the end of that last quote: =internal=.
+
+Like =testdata=, =internal= has a special meaning within the Go compiler.
+
+For =testdata=, it's one of the names the compiler will just straight-up ignore
+when [[https://dave.cheney.net/2016/05/10/test-fixtures-in-go][looking for code]], along with folders starting with a period or an
+underscore. This is because =testdata= is a pretty handy way to have files you
+want to ensure the compiler doesn't attempt to compile; particularly handy when
+testing stuff like ASTs!
+
+However, we're talking about =interna= here, not =testdata=.
+
+So what does =internal= do? Basically: it's how to prevent your packages from
+being imported inside a package that doesn't share a common ancestor.
+
+To quote a bit more from Dave:
+
+#+BEGIN_QUOTE
+To create an internal package, place it within a directory named internal/. When
+the go command sees an import of a package with internal/ in the import path, it
+verifies that the importing package is within the tree rooted at the parent of
+the internal/ directory.
+
+For example, a package /a/b/c/internal/d/e/f can only be imported by code in the
+directory tree rooted at /a/b/c. It cannot be imported by code in /a/b/g or in
+any other repository.
+#+END_QUOTE
+
+This is a /very/ good thing. Think about separation of responsibilities and all
+that fun stuff. How do you enforce something like "only the Ads service should
+ever import package =x="? Without an =internal= folder, you can't. So code that
+should only be used by the Ads service could potentially be imported and used by
+another project. Which means you have to treat every package that exports any
+symbols as part of your public API.
+
+And that sounds like a support nightmare.
+
+So by using =internal= we create a very simple way to separate the public API of a
+module from the private API.
+
+One last thing on folder layout: every package, with the exception of =cmd/= and
+=internal/=, should contain some source code. That's not to say =internal= /can't/
+have any source code, just that it's one of the two folders it's not /required/.
+
+** Consider Fewer, Larger Packages
+Go does not provide elaborate ways of establishing visibility. Go lacks Java’s
+=public=, =protected=, =private=, and implicit =default= access modifiers. There is no
+equivalent of C++'s notion of a =friend= classes.
+
+In Go we have only two access modifiers, public and private, the former
+indicated by the capitalisation of the first letter of the identifier. If an
+identifier is public, it’s name starts with a capital letter, that identifier
+can be referenced by any other Go package.
+
+You may hear people say exported and not exported as synonyms for public and
+private.
+
+Given the limited controls available to control access to a package’s symbols,
+what practices should Go programmers follow to avoid creating over-complicated
+package hierarchies?
+
+The advice I find myself repeating is to prefer fewer, larger packages. Your
+default position should be to not create a new package. That will lead to too
+many types being made public creating a wide, shallow, API surface for your
+package.
+
+If you’re coming from a Java or C# background, consider this rule of thumb. - A
+Java package is equivalent to a single =.go= source file. - A Go package is
+equivalent to a whole Maven module or .NET assembly.
+
+This is worth going into more detail, so that's exactly what we're going to do!
+
+*** Arrange code into files by import statements
+If you’re arranging your packages by what they provide to callers, should you do
+the same for files within a Go package? How do you know when you should break up
+a .go file into multiple ones? How do you know when you’ve gone to far and
+should instead consolidate several .go files together?
+
+Here are the guidelines I use:
+
+ - Start each package with one =.go= file. Give that file the same name as the
+   name of the folder. For example the source for =package http= should be placed
+   in a file called =http.go= in a directory named =http=.
+ - As your package grows you may decide to split apart the various
+   responsibilities into different files. eg, =messages.go= contains the =Request=
+   and =Response= types, =client.go= contains the =Client= type, =server.go= contains
+   the =Server= type.
+ - If you find your files have similar =import= declarations, consider combining
+   them. Alternatively, identify the differences between the import sets and
+   move those types/functions/methods into their own file.
+ - Different files should be responsible for different areas of the
+   package. =messages.go= may be responsible for marshalling of HTTP requests and
+   responses on and off the network, =http.go= may contain the low level network
+   handling logic, =client.go= and =server.go= implement the HTTP business logic of
+   request construction or routing, and so on.
+
+Prefer nouns for source file names. They are containers for source code after all. 
+
+And as a note: the Go compiler compiles each package in parallel. Within a
+package the compiler compiles each function (methods are just fancy functions in
+Go) in parallel. Changing the layout of your code within a package should not
+affect compilation time.
+
+*** Keep =package main= as small as possible
+Your =main= function, and =main= package should do as little as possible. This is
+because =main.main= acts as a singleton; there can only be one main function in a
+program.
+
+Because =main.main= is a singleton there are a lot of assumptions built into the
+things that =main.main= will call, that they will only be called during =main.main=
+or =main.init=, and only called once. This makes it hard to write tests for code
+written in =main.main=. Main packages often invoke singletons, parse command line
+flags, expect files to be on disk in a certain place, and never expect to be
+executed concurrently. You can’t even reference =main.main= from a test.
+
+Thus you should aim to move as much of your business logic out of your main
+function and ideally out of your main package. =func main()= should parse flags,
+open connections to databases, loggers, and such, then hand off execution to a
+high level object.
+
+*** Prefer internal tests to external tests
+The =go= tool supports writing your testing package tests in two places. Assuming
+your package is called =http2=, you can write a =http2_test.go= file and use the
+=package http2= declaration. Doing so will compile the code in =http2_test.go= as if
+it were part of the =http2= package. This is known colloquially as an internal
+test.
+
+The =go= tool also supports a special package declaration, ending in test, ie.,
+=package http_test=. This allows your test files to live alongside your code in
+the same package, however when those tests are compiled they are not part of
+your package’s code, they live in their own package. This allows you to write
+your tests as if you were another package calling into your code. This is known
+as an external test.
+
+I recommend using internal tests when writing unit tests for your package. This
+allows you to test each function or method directly, avoiding the bureaucracy of
+external testing.
+
+However, you should place your =Example= test functions in an external test
+file. This ensures that when viewed in godoc, the examples have the appropriate
+package prefix and can be easily copy pasted. 

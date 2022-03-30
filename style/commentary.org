@@ -1,0 +1,240 @@
+
+** Comments
+Before we move on to larger items, we should spend a little time talking about comments.
+
+#+BEGIN_QUOTE
+Good code has lots of comments, bad code requires lots of comments. 
+
+  — Dave Thomas and Andrew Hunt, [[https://www.amazon.ca/Pragmatic-Programmer-Journeyman-Master/dp/020161622X][The Pragmatic Programmer]]
+#+END_QUOTE
+
+Comments are very important to the readability of a Go program. Each comment
+should do one — ​and only one —​ of the following three things:
+
+ 1. The comment should explain /what/ the thing does.
+ 2. The comment should explain /how/ the thing does what it does.
+ 3. The comment should explain /why/ the thing is the way it is.
+
+*** What
+The first form is ideal for commentary on public symbols: 
+
+#+BEGIN_SRC go
+// Open opens the named file for reading.
+// If successful, methods on the returned file can be used for reading.
+#+END_SRC
+
+*** How
+The second form is ideal for commentary inside a method:
+#+BEGIN_SRC go
+// queue all dependant actions
+var results []chan error
+for _, dep := range a.Deps {
+        results = append(results, execute(seen, dep))
+}
+#+END_SRC
+
+*** Why
+The third form, the /why/, is unique as it does not displace the first two, but
+at the same time it’s not a replacement for the /what/, or the /how/. The /why/ style
+of commentary exists to explain the external factors that drove the code you
+read on the page. Frequently those factors rarely make sense taken out of
+context, the comment exists to provide that context.
+
+#+BEGIN_SRC go
+  return &v2.Cluster_CommonLbConfig{
+    // Disable HealthyPanicThreshold
+    // See https://www.envoyproxy.io/docs/envoy/v1.9.0/intro/arch_overview/load_balancing/panic_threshold#arch-overview-load-balancing-panic-threshold
+    HealthyPanicThreshold: &envoy_type.Percent{
+      Value: 0,
+    },
+  }
+#+END_SRC
+
+In this example it may not be immediately clear what the effect of setting
+=HealthyPanicThreshold= to zero percent will do. The comment is needed to clarify
+that the value of =0= will disable the panic threshold behaviour.
+
+Comments such as these record hard won battles for understanding deep in the
+business logic. When you have the opportunity to write them, be sure to include
+enough hints that the next reader can follow your research. Links to issues,
+design documents, RFCs, or specifications that provide more background are
+always helpful.
+
+** Comments On Variables & Constants Should Describe The Contents
+When you add a comment to a variable or constant, that comment should describe
+the variables /contents/, not the variables /purpose/.
+
+#+BEGIN_SRC go
+const RandomNumber = 6 // determined from roll of an unbiased die 🎲
+#+END_SRC
+
+In this example the comment describes why =RandomNumber= is assigned the value
+six, and where the six was derived from. The comment does /not/ describe where
+=RandomNumber= will be used. This is deliberate; =RandomNumber= may be used many
+times by any package that references it. It is not possible to keep a record of
+all those uses at the site that =RandomNumber= is declared. Instead the name of
+the constant should be a guide the appropriate use for potential users.
+
+#+BEGIN_SRC go
+const (
+    StatusContinue           = 100 // RFC 7231, 6.2.1
+    StatusSwitchingProtocols = 101 // RFC 7231, 6.2.2
+    StatusProcessing         = 102 // RFC 2518, 10.1
+
+    StatusOK                 = 200 // RFC 7231, 6.3.1
+#+END_SRC
+
+In general use the untyped constant =100= is just the number one hundred. /In the
+context of HTTP/ the number =100= is known as =StatusContinue=, as defined in RFC
+7231, section 6.2.1. The comment included with that declaration helps the reader
+understand /why/ =100= has special significance as a HTTP response code.
+
+*** Note 1: Uninitialized Variables
+For variables without an initial value, the comment should describe who is
+responsible for initialising this variable.
+
+#+BEGIN_SRC go
+// sizeCalculationDisabled indicates whether it is safe
+// to calculate Types' widths and alignments. See dowidth.
+var sizeCalculationDisabled bool
+#+END_SRC
+
+This example comes deep from the bowels of the Go compiler. Here, the comment
+lets the reader know that the =dowidth= function is responsible for maintaining
+the state of =sizeCalculationDisabled=.
+
+The fact that this advice runs contrary to previous advice that comments should
+not describe who uses them is a hint that =dowidth= and =sizeCalculationDisabled=
+are intimately entwined. The comments presence suggests a possible design
+weakness.
+
+** Comments On Functions Should Describe Their Purpose
+The comment on a function signature should describe what the function intends to
+do, not how it does it. Similarly they should describe the inputs and outputs of
+a function, not be overly perscriptive of how those should be used. Rather than
+describe the type of the return value, the function’s comment should describe
+the value’s meaning.
+
+If a function is so simple that the name is enough to document it, document it
+anyways. You'll need a comment to disable linting for that missing comment
+anyways, so just write a short sentence or two that maybe explains /why/ this
+extremely simple function exists *and is exported*. 
+
+The description should be sufficient to write a unit test for the documented
+behaviour.
+
+Be on the lookout for conjoining words like or, they are smell that a function
+may do more than one thing, violating the single responsibility principle. The
+comment should explain what the thing does, not how it does it.
+
+** Always Document Public Symbols & Types
+Because [[https://pkg.go.dev/golang.org/x/tools/cmd/godoc][godoc]] is the documentation for your package, you should always add a
+comment for every public symbol —​ type, variable, constant, function, and method
+—​ declared in your package.
+
+Here are two rules from the Google Style guide:
+
+ - Any public function that is not both obvious and short must be commented.
+ - Any function in a library must be commented regardless of length or
+   complexity.
+
+#+BEGIN_SRC go
+package ioutil
+// ReadAll reads from r until an error or EOF and returns the data it read.
+// A successful call returns err == nil, not err == EOF. Because ReadAll is
+// defined to read from src until EOF, it does not treat an EOF from Read
+// as an error to be reported.
+func ReadAll(r io.Reader) ([]byte, error)
+#+END_SRC
+
+There is one exception to this rule; you don’t need to document methods that
+implement an interface. Specifically, don’t do this:
+
+#+BEGIN_SRC go
+// Read implements the io.Reader interface
+func (r *FileReader) Read(buf []byte) (int, error)
+#+END_SRC
+
+This comment says nothing. It doesn’t tell you what the method does. In fact
+it’s worse than, it tells you to go look somewhere else for the
+documentation. In this situation I suggest removing the comment entirely.
+
+Here is an example from the io package
+#+BEGIN_SRC go
+// LimitReader returns a Reader that reads from r
+// but stops with EOF after n bytes.
+// The underlying implementation is a *LimitedReader.
+func LimitReader(r Reader, n int64) Reader { return &LimitedReader{r, n} }
+
+// A LimitedReader reads from R but limits the amount of
+// data returned to just N bytes. Each call to Read
+// updates N to reflect the new amount remaining.
+// Read returns EOF when N <= 0 or when the underlying R returns EOF.
+type LimitedReader struct {
+	R Reader // underlying reader
+	N int64  // max bytes remaining
+}
+
+func (l *LimitedReader) Read(p []byte) (n int, err error) {
+	if l.N <= 0 {
+		return 0, EOF
+	}
+	if int64(len(p)) > l.N {
+		p = p[0:l.N]
+	}
+	n, err = l.R.Read(p)
+	l.N -= int64(n)
+	return
+}
+#+END_SRC
+
+Note that the =LimitedReader= declaration is directly preceded by the function
+that uses it, and the declaration of =LimitedReader.Read= follows the declaration
+of =LimitedReader= itself. Even though =LimitedReader.Read= has no documentation
+itself, it should be that it is an implementation of =io.Reader=.
+
+#+BEGIN_TIP
+Before you write the function, write the comment describing the function. If you
+find it hard to write the comment, then it’s a sign that the code you’re about
+to write is going to be hard to understand.
+#+END_TIP
+
+** Don't Comment Bad Code, Rewrite It
+Comments highlighting the grossness of a particular piece of code are not
+sufficient. If you encounter one of these comments, you should raise an issue as
+a reminder to refactor it later. It is okay to live with technical debt, as long
+as the amount of debt is known.
+
+The tradition in the standard library is to annotate a TODO style comment with
+the username of the person who noticed it.
+
+#+BEGIN_SRC go
+// TODO(dfc) this is O(N^2), find a faster way to do this.
+#+END_SRC
+
+The username is not a promise that that person has committed to fixing the
+issue, but they may be the best person to ask when the time comes to address it.
+
+Additionally, there are tools that can search a code base to find all such
+'TODO' comments and surface them. Some can even automatically generate tickets!
+
+** Rather Than Commenting A Block of Code, Refactor It
+#+BEGIN_QUOTE
+Good code is its own best documentation. As you’re about to add a comment, ask
+yourself, 'How can I improve the code so that this comment isn’t needed?'
+Improve the code *and then document it to make it even clearer*.
+
+  — Steve McConnell
+#+END_QUOTE
+
+Emphasis ours.
+
+Functions should do one thing only. If you find yourself commenting a piece of
+code because it is unrelated to the rest of the function, consider extracting it
+into a function of its own.
+
+In addition to being easier to comprehend, smaller functions are easier to test
+in isolation. Once you’ve isolated the orthogonal code into its own function,
+its name may be all the documentation required... but you should probably still
+write /something/.
+

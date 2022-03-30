@@ -1,0 +1,789 @@
+#+BEGIN_QUOTE
+Write shy code - modules that don’t reveal anything unnecessary to other modules
+and that don’t rely on other modules' implementations.
+
+  — [[https://twitter.com/codewisdom/status/1045305561317888000?s=12][Dave Thomas]]
+#+END_QUOTE
+
+In his book, /Test Driven Design and Development/, Kent Beck describes the idea of
+a unit of software. In software, the unit is atomic, indivisible.
+
+In the physical world atoms are composed of quarks, mesons, bosons, and
+gluons. We cannot observe them directly, only infer them from their
+/behaviour/--mass, charge, gravitational attraction. In the software world, if a
+unit is composed of smaller subatomic particles, as a user—​a caller of that
+software—​we are unable to directly observe the imlementation details of the
+unit. Instead we rely on the /behaviour/ of a unit.
+
+The size of a unit of software differs by language. In C the unit is a function,
+as C offers little else. In Java, the unit of software is commonly /mis-believed/
+to be the /class/. In Go, the unit of software is not the function, or the type,
+or the method, but instead the /package/.
+
+Just as the implementation of a function or method is unimportant to the caller,
+the implementation of the functions, methods and types that comprise your
+package’s public API—​its behaviour—​is unimportant for the caller. The public API
+of a package describes /what/ it does not /how/ it does it. Moreover, when designed
+well, the /implementation/ of your package is obscured from the caller
+
+In this section we’ll talk about designing a package around its behaviour as
+exposed via its public API.
+** A Good Package Starts With Its Name
+If the goal of a well designed Go package is to provide a set of related
+behaviours, writing a good package starts with choosing a good name. Think of
+your package’s name as a one world elevator pitch to describe what your package
+can do for you elevator companion.
+
+Just as I talked earlier about naming variables, the name of a package is very
+important. I start by asking myself questions like, "what is the purpose of this
+package" or "what does service does package provide?". Hopefully the answer to
+that question is "this package let’s you speak HTTP", not "this package provides
+the X type", otherwise its time to go back to the drawing board.
+
+As a tip: name your package for what it /provides/, not what it /contains/.
+
+** Good Package Names Should Be Unique
+Within your project, each package name should be unique. This should pretty easy
+to if you’ve followed the previous advice that a package’s name should derive
+from its purpose. If you find you have two packages which need the same name, it
+is likely either;
+
+ - The name of the package is too generic--=client=, =worker=, =shared=, etc.
+ - The package overlaps another package of a similar name. In this case either
+   you should review your design, or consider merging the packages, or renaming
+   the conflicting packages to make their purpose more specific. Consdider the
+   =io/ioutil= and =net/http/httputil= packages as weak supporting evidence.
+   
+** Avoid Package Names Like =base=, =common=, Or =util=
+A common cause of poor package names is what are often called /utility
+packages/. These are packages where helpers and utility code congeals over
+time. As these packages contain an assortment of unrelated functions, their
+utility is hard to describe in terms of what the package provides. This often
+leads to the package’s name being derived from what the package
+/contains/--utilities.
+
+Package names like =utils= or =helpers= are commonly found in larger projects which
+have developed deep package hierarchies and want to share helper functions
+without encountering import loops. By extracting utility functions to new
+package the import loop is broken, but because the package stems from a design
+problem in the project its name doesn’t reflect its purpose, only its function
+of breaking the import cycle.
+
+My recommendation to improve the name of =utils= or =helpers= packages is to analyse
+where they are called and if possible move the relevant functions into their
+caller’s package. Even if this involves duplicating some helper code this is
+better than introducing an import dependency between two packages.
+
+In the case where utility functions are used in many places -- prefer multiple
+packages, each focused on a single aspect, to a single monolithic package.
+
+Naming tip: Use plurals for naming utility packages. For example: the =strings=
+package for string handling utilities.
+
+Packages with names like =base= or =common= are often found when functionality
+common to two or more implementations, or common types for a client and server,
+has been refactored into a separate package. Their names also represent design
+holdovers from languages like Java and C++ where the relationship between
+packages followed similar rules to those of inheretence. I believe the solution
+to packeges like =base= or =common= is to reduce the number of packages, combine the
+client, server, and common code into a single package named after the behaviour
+delivered from the previously fractured packages.
+*** A Public Identifier Includes Its Package Name
+It’s important to remember that the name of an identifier includes the name of its package.
+
+ - The =Get= function from the =net/http= package becomes =http.Get= when referenced by another package.
+ - The =Reader= type from the =strings= package becomes =strings.Reader= when imported into other packages.
+ - The =Error= interface from the =net= package is clearly related to network
+   errors.
+   
+** Return Early Rather Than Nesting Deeply
+As Go does not use exceptions for control flow there is no requirement to deeply
+indent your code just to provide a top level structure for the =try= and =catch=
+blocks. Rather than the successful path nesting deeper and deeper to the right,
+Go code is written in a style where the success path continues down the screen
+as the function progresses. My friend Mat Ryer [[https://medium.com/@matryer/line-of-sight-in-code-186dd7cdea88][calls this practice 'line of
+sight' coding]].
+
+This is achieved by using /guard clauses/; conditional blocks with assert
+preconditions upon entering a function. Here is an example from the bytes
+package,
+
+#+BEGIN_SRC go
+func (b *Buffer) UnreadRune() error {
+	if b.lastRead <= opInvalid {
+		return errors.New("bytes.Buffer: UnreadRune: previous operation was not a successful ReadRune")
+	}
+	if b.off >= int(b.lastRead) {
+		b.off -= int(b.lastRead)
+	}
+	b.lastRead = opInvalid
+	return nil
+}
+#+END_SRC
+
+Upon entering =UnreadRune= the state of =b.lastRead= is checked and if the previous
+operation was not =ReadRune= an error is returned immediately. From there the rest
+of the function proceeds with the assertion that =b.lastRead= is greater than
+=opInvalid=.
+
+Compare this to the same function written without a guard clause,
+
+#+BEGIN_SRC go
+func (b *Buffer) UnreadRune() error {
+	if b.lastRead > opInvalid {
+		if b.off >= int(b.lastRead) {
+			b.off -= int(b.lastRead)
+		}
+		b.lastRead = opInvalid
+		return nil
+	}
+	return errors.New("bytes.Buffer: UnreadRune: previous operation was not a successful ReadRune")
+}
+#+END_SRC
+
+The body of the successful case, the most common, is nested inside the first =if=
+condition and the successful exit condition, =return nil=, has to be discovered by
+careful matching of /closing/ braces. The final line of the function now returns
+an error, and the reader must trace the execution of the function back to the
+matching /opening/ brace to know when control will reach this point.
+
+This is more error prone for the reader, and the maintenance programmer, hence
+why Go prefer to use guard clauses and returning early on errors.
+
+** Make The Zero Value Useful
+Every variable declaration, assuming no explicit initialiser is provided, will
+be automatically initialised to a value that matches the contents of zeroed
+memory. This is the value’s /zero value/. The type of the value determines it’s
+zero value; for numeric types it is zero, for string types it is =""=, for pointer
+types =nil=, the same for slices, maps, and channels.
+
+This property of always setting a value to a known default is important for
+safety and correctness of your program and can make your Go programs simpler and
+more compact. This is what Go programmers talk about when they say "give your
+structs a useful zero value".
+
+Consider the =sync.Mutex= type. =sync.Mutex= contains two unexported integer fields,
+representing the mutex’s internal state. Thanks to the zero value those fields
+will be set to will be set to =0= whenever a =sync.Mutex= is declared. =sync.Mutex=
+has been deliberately coded to take advantage of this property, making the type
+usable without explicit initialisation.
+
+#+BEGIN_SRC go
+type MyInt struct {
+	mu  sync.Mutex
+	val int
+}
+
+func main() {
+	var i MyInt
+
+	// i.mu is usable without explicit initialisation.
+	i.mu.Lock()
+	i.val++
+	i.mu.Unlock()
+}
+#+END_SRC
+
+Another example of a type with a useful zero value is =bytes.Buffer=. You can
+declare a =bytes.Buffer= and start writing to it without explicit initialisation.
+
+#+BEGIN_SRC go
+func main() {
+	var b bytes.Buffer
+	b.WriteString("Hello, world!\n")
+	io.Copy(os.Stdout, &b)
+}
+#+END_SRC
+
+A useful property of slices is their zero value is =nil=. This makes sense if we
+look at the runtime’s (pseudo) definition of a slice header.
+
+#+BEGIN_SRC go
+type slice struct {
+        array *[...]T // pointer to the underlying array
+        len   int
+        cap   int
+}
+#+END_SRC
+
+The zero value of this struct would imply =len= and =cap= have the value =0=, and
+=array=, the pointer to memory holding the contents of the slice’s backing array,
+would be =nil=. This means unless you need to specify a size you don’t need to
+explicitly make a slice, you can just declare it.
+
+#+BEGIN_SRC go
+func main() {
+	// s := make([]string, 0)
+	// s := []string{}
+	var s []string
+
+	s = append(s, "Hello")
+	s = append(s, "world")
+	fmt.Println(strings.Join(s, " "))
+}
+#+END_SRC
+
+#+BEGIN_NOTE
+=var s []string= is similar to the two commented lines above it, but not
+identical. It is possible to detect the difference between a slice value that is
+nil and a slice value that has zero length.
+
+~func main() {~
+  ~var s1 = []string{}~
+	~var s2 []string~
+	~fmt.Println(reflect.DeepEqual(s1, s2)) // false
+~}~
+#+END_NOTE
+
+A useful, albeit surprising, property of uninitialised pointer variables—​nil
+pointers—​is you can call methods on types that have a nil value. This can be
+used to provide default values simply.
+
+#+BEGIN_SRC go
+type Config struct {
+	path string
+}
+
+func (c *Config) Path() string {
+	if c == nil {
+		return "/usr/home"
+	}
+	return c.path
+}
+
+func main() {
+	var c1 *Config
+	var c2 = &Config{
+		path: "/export",
+	}
+	fmt.Println(c1.Path(), c2.Path())
+}
+#+END_SRC
+** Avoid Package Level State
+The key to writing maintainable programs is that they should be loosely
+coupled. A change to one package should have a low probability of affecting
+another.
+
+There are two excellent ways to achieve loose coupling in Go:
+
+ 1. Use interfaces to describe the behaviour your functions or methods require.
+ 2. Avoid the use of global state.
+
+In Go we can declare variables at the block, function, or method scope, and also
+at the package scope. When the variable is public, given a identifier starting
+with a capital letter, then its scope is effectively global to the entire
+program—​any package may observe the type and contents of that variable at /any time/.
+
+Mutable global state introduces tight coupling between independent parts of your
+program as global variables become an invisible parameter to every function in
+your program! Any function that relies on a global variable can be broken if
+that variable’s type changes. Any function that relies on the state of a global
+variable can be broken if another part of the program changes that variable.
+
+If you want to reduce the coupling a global variable creates,
+
+ 1. Move the relevant variables as fields on structs that need them.
+ 2. Use interfaces to reduce the coupling between the behaviour and the
+    implementation of that behaviour.
+
+For a more in-depth reason on why we should avoid package-level state ( aka:
+global variables ), [[https://dave.cheney.net/2017/06/11/go-without-package-scoped-variables][Dave Cheny has an excellent write-up that goes into this in
+depth]].
+ 
+** Interfaces
+For folks coming from other languages, interfaces can be hard to wrap your head
+around. They're used in a number of ways that make really understanding them a
+tricky prospect.
+
+At their core, though, this is what interfaces are:
+
+A way to specify the expected behaviour of an object; if it can do /this/, then it
+can be used /here/.
+
+You're probably wondering about the empty interface -- written as =interface{}= --
+and why you see it all over the place, though. At least, in Go written in
+versions 1.17 and before. In 1.18 and above you may be wondering about =any= --
+just remember that =any= is an alias for =interface{}= and all the following still
+applies.
+
+*** Stuff To Read & Crib From :noexport:
+https://www.integralist.co.uk/posts/go-interfaces/
+https://qvault.io/golang/golang-interfaces/
+https://stackoverflow.com/questions/39092925/why-are-interfaces-needed-in-golang
+https://stackoverflow.com/questions/11054830/if-gos-interfaces-arent-enforced-are-they-necessary
+https://stackoverflow.com/questions/60741482/whats-the-point-of-public-interfaces-in-go
+https://www.calhoun.io/how-do-interfaces-work-in-go/
+https://www.alexedwards.net/blog/interfaces-explained
+https://itnext.io/interfaces-in-go-5c6e38b81b41
+https://www.digitalocean.com/community/tutorials/how-to-use-interfaces-in-go
+https://golangbot.com/interfaces-part-1/
+
+*** The Empty =interface{}= ( AKA: =any= )
+
+So the empty interface is a side effect of the way interfaces and the type
+system interact. An interface is a way of disregarding type so that code can
+specify behaviour. What this means is that if you have an interface like so:
+
+#+BEGIN_SRC go
+  type Higher interface {
+    GetHigh()
+  }
+#+END_SRC
+
+...and then define two types:
+
+#+BEGIN_SRC go
+  type SimpleHigh string
+
+  // GetHigh ...
+  func (s *SimpleHigh) GetHigh() {
+    ,*s = fmt.Sprintf("🍍%v🍍", s)
+  }
+
+  type ComplexHigh struct{}
+
+  func (ch *ComplexHigh) GetHigh() {
+    // imagine like 100 lines of code
+  }
+#+END_SRC
+
+A function can be written to accept anything that implements the =Higher=
+interface without having to care about what type it is. The function doesn't
+care if it's a string, an in, an empty struct, or a struct with hundreds of
+fields -- all it cares about is "can I call =GetHigh()= on what I've been
+passed?".
+
+So it should be clear at this point that interfaces are a way of sidestepping
+the type system to allow developers to focus on behaviour rather than concrete
+hierarchies.
+
+What does this have to do with the empty interface?
+
+Well, think about what the empty interface /is/. It's an interface that defines no
+functions. Therefore, =interface{}= is an interface that every type in Go fits
+into. Now, this doesn't mean you should use =interface{}= to get around types --
+very much the opposite, in fact.
+
+The combination of types and interfaces means that Go code can focus on type
+when important, and behaviour when that's important.
+
+As a side note, I'm pretty sure we're getting an =any= alias for =interface{}= in Go
+1.18 thanks to generics, so that should help clear up some confusion -- hopefully.
+
+So given everything we've gone over, where should interfaces get defined?
+
+Going back to the core reason for interfaces ( defining accepted behaviour ),
+then it seems pretty clear that the thing accepting the interface is what should
+be defining the interface. In other words, define interfaces within the packages
+where they are used. A corollary to this is that for the most part, interfaces
+should be private, not exported.
+
+*** Keep Interfaces As Small As Possible
+Every method you define in an interface is one more method you have to write on
+every type if you want to use it where the code is expecting that interface.
+
+*** Side Note: Why /Do/ Some Packages Define Their Own Interfaces?
+There are, of course, some caveats.
+
+A good example is the =Reader= interface provided by the =io= package:
+
+#+BEGIN_SRC go
+type Reader interface {
+	Read(p []byte) (n int, err error)
+}
+#+END_SRC
+
+For those still new to Go: a =Reader= is an interface that allows users to pass in
+a slice of bytes that data will be read into (it's assumed you either don't care
+about what's currently in the slice or that it's empty). It returns how many
+bytes were written to the slice, as well as an error to signal an error -- or an
+=io.EOF= error to signal there's nothing more to read.
+
+I'm not going to dive into why this interface was designed this way, there are
+plenty of other articles that will do so. For example, [[https://dave.cheney.net/2019/09/05/dont-force-allocations-on-the-callers-of-your-api][why do you pass in a byte
+slice instead of =Read= returning one]]?
+
+Instead, let's talk about why the =io= package defines one at all.
+
+Well, let's think about all the places in the standard library that accept
+=io.Reader= as an argument.
+
+First off, there are [[https://cs.opensource.google/search?q=case:y%20func%5Cs%5BA-Z%5D.%2Bio.Reader%5B,)%5D%20&sq=&ss=go][at least 154 functions that accept an io.Reader]], across
+nearly as many packages.
+
+Let's take a look at one of those: [[https://pkg.go.dev/golang.org/x/image/webp][the image/webp package]]. This package defines
+just two functions: =Decode= and =DecodeConfig=. The first one attempts to convert
+the image into the =image.Image= struct used by all of the =image= sub-packages, the
+second one attempts to read information from the header and return color model &
+dimension information as a =image.Config=.
+
+So why =io.Reader= and not =webp.Reader= or =image.Reader=?
+
+Well, the immediately obvious answer is that =io.Reader= already exists, and code
+re-use is good, so bing bang boom we're using =io.Reader=.
+
+...Right?
+
+Well, there's more to it than that. What if the team behind the =image= package
+decided they made their own, slightly different interface:
+
+#+BEGIN_SRC go
+  // ImageReader reads `lim` bytes into `b`. Returns `image.End`
+  // if no more bytes can be read, nil if there is no error, and
+  // a non-nil, non-`image.End` for all other cases.
+  type ImageReader interface {
+    Read(b []byte, lim int) error
+  }
+#+END_SRC
+
+So what does this mean for code that wants to see how big a .webp is by using
+=DecodeConfig=? What if the image is being read over the network? What the image
+has been compressed? What if...?
+
+Think about how easy it is to compose all those cases because of how ubiquitous
+=io.Reader= is:
+
+#+BEGIN_SRC go
+  conf, err := webp.DecodeConfig(zip.Decompressor(bytes.NewBuffer(req.Body)))
+#+END_SRC
+
+Now, what if each of those had it's own unique reader? How do you transform a
+=bytes.Buffer= into something =zip.Decompressor= can accept? How do you turn /that/
+into something =webp.DecodeConfig= can accept?
+
+By standardizing on the use of =io.Reader= as how bytes are read, it opens up
+thousands of ways to compose readers to accomplish what you're looking for.
+
+An alternative way to think about this is that many packages /might have had/
+their own interfaces that looked like or performed the same function as
+=io.Reader= -- and the Go team standardized on =io.Reader= as *the* interface defining
+how to read bytes, and put it in the =io= package.
+
+*** Side Note: Why is =io.Reader= an example of great interface design?
+
+What I will talk about is how =io.Reader= is a great example of an interface, any
+design weirdness aside. 
+
+So, why *is* =io.Reader= so great?
+
+Let's take a look at two functions that both do the same thing: read some bytes,
+looking for a specific set of bytes, and returning true as soon as that set of
+bytes is found.
+
+#+BEGIN_SRC go
+  var lookFor = []byte{0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64}
+
+  func FindInSlice(b []byte) bool {
+    // do the check!
+    return bytes.Contains(b, lookFor)
+  }
+
+  func FindInReader(r io.Reader) bool {
+    // create a buffer
+    buf := []byte{}
+    // cache this so we're not doing each loop iteration
+    l := len(lookFor)
+
+    // our temporary buffer
+    t := make([]byte, l*2)
+
+    for {
+      // read some bytes
+      n, err := r.Read(t)
+      if err == io.EOF {
+        buf = append(buf, t...)
+        break
+      }
+      if err != nil {
+        return false
+      }
+
+      buf = append(buf, t...)
+
+      if bytes.Contains(buf, lookFor) {
+        return true
+      }
+
+      if len(buf) > l+n {
+        buf = buf[l : l+n]
+      }
+    }
+
+    return bytes.Contains(buf, lookFor)
+  }
+#+END_SRC
+
+At first the one that takes =[]byte= is the clear winner, right? But think about
+how you can use both functions.
+
+For the first one, you have to prepare a slice of all the bytes you want to
+check before you can make the check. What if you're waiting on bytes from a huge
+file, or from a network connection?
+
+The second function that takes =io.Reader= is larger; that's not something I could
+argue and still be considered sane. However, it is a method that won't require
+many changes to get it to work with other byte sources. Also, it removes some of
+the responsibility from the caller to get everything in order. Many libraries
+return structs that fulfill the =io.Reader= interface; not having to use
+=io.ReadAll= first to get the byte slice is less code to write -- and more memory efficient.
+
+For example, many object storage libraries provide an =io.Reader= that lets you
+read chunks of bytes from an object. If you're reading bytes from an object
+store, there's a good chance you're paying for that operation ( even if it's
+only fractions of a penny ). In such cases, wouldn't you want to be able to
+return as soon as you've found the bytes you want, rather than having to read
+all of the bytes -- no matter how many or how long that takes -- using
+=io.ReadAll=?
+
+Additionally, the second function works with /anything/ that implements that
+interface. Want to use a =bytes.Buffer=? Go nuts. Got a file handle you want to
+read from? That works too! Maybe you've got an API client that provides a struct
+that fulfills =io.Reader= for reading data over the network -- just pass that
+struct into =FindInReader= and you're good to go! So while using the interface did
+require writing more code /at first/, by using an interface you've allowed the
+code to work with anything that fulfills the interface instead of having to
+write a new function for each thing you want to see if it contains 'hello world'.
+
+** Functions
+So Go has functions and methods. The first are these:
+
+#+BEGIN_SRC go
+  func Something() error {
+    //...
+  }
+#+END_SRC
+
+Methods are these:
+
+#+BEGIN_SRC go
+  func (m *MyStruct) Something() error {
+    //...
+  }
+#+END_SRC
+
+For clarity: if I say 'function' I mean functions or methods. When I say
+'method' I mean just methods.
+
+*** Prefer Shorter Functions
+#+BEGIN_QUOTE
+The maximum length of a function is inversely proportional to the complexity and
+indentation level of that function.
+
+  — Linux Kernel style guide[linux]
+#+END_QUOTE
+
+Each function should be written in terms of a single level of
+abstraction. Ideally a function should do one, and only one, thing.
+
+#+BEGIN_QUOTE
+Naive programmers think that design means “don’t make functions or classes too
+long”. However, the real problem is writing code that mixes unrelated ideas.
+
+  — Justin Meiners[meiners2019]
+#+END_QUOTE
+
+This should place an upper limit on the length of a function which is beneficial
+because, besides longer functions being harder to read, longer functions are
+more likely to mix more than one idea. The required disentanglement must then be
+performed by the reader.
+*** Avoid Named Return Values
+Named return values permit the function’s author to;
+
+ - Increase separation between declaration and use. Which runs contrary to the
+   previous suggestion, and decreases readability, especially when the function
+   or method is long.
+ - Increase the risk of shadowing.
+ - Enable the use of naked returns.
+
+Each of which are a net negative on the readability of the function.
+
+ - Named returned arguments introduce a discontinuity in the declaration of
+   variables.
+ - Named returns move the declaration to an unexpected location.
+ - Named returns force you to declare all return parameters, or worse declare
+   them _.
+
+In short, named return values are a symptom of a clever piece of code which
+should be reviewed with suspicion. If the method is infact simple, then named
+returns values are playing the short game of brevity over readability.
+
+Its’s my opinion that names return arguments should not be used unless required
+to provide something that could not reasonably be done another way. For example,
+to modify the return arguments in a defer block, where it is required to name
+return arguments to capture them.
+
+#+BEGIN_SRC go
+func ReadFile(name string) (output string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("could not read %q: %v", name, err)
+		}
+	}()
+
+	f, err := os.Open(name)
+	if err != nil {
+		return "", err
+	}
+
+	// ...
+}
+#+END_SRC
+
+What is clear is that this function is complex, and named return values are part
+of that complexity.
+
+All things being equal, you should aim to write simple code, not clever
+code. And so should avoid designs that require named return values.
+
+There is nothing you can do with named return values that you cannot do with a
+few more lines of code. Avoid them if possible.
+*** Avoid Naked Returns
+Naked returns combine the declaration of a return value in the function
+declaration with an unspecified assignment somewhere in the body of the
+function. Everything about the use of naked returns admits a set of actions that
+hides bugs, in even small functions.
+
+Naked returns are inconsistent; they make it look like the function or method
+returns no values, when infact it does, as they were declared in the function
+signature.
+
+Naked returns are often used inconsistently, especially in an error path where
+nil is returned explicitly, or the zero value of a named return value is
+used. Combined with early returns this results in multiple, sometimes
+conflicting, return statements Use naked return consistently or not at all.
+
+#+BEGIN_SRC go
+func (f *Filter) Open(name string) (file File, err error) {
+	for _, c := range f.chain {
+		file, err = c.Open(name)
+		if err != nil {
+			return
+		}
+	}
+	return f.source.Open(name)
+}
+#+END_SRC
+
+If you must use naked returns; use only naked returns in a function  —  don’t mix
+and match.
+
+*** Method Receivers
+So that we're all on the same page:
+
+#+BEGIN_SRC go
+  func (t Thing) Do(ctx context.Context) error {
+	//    ^--- this thing
+#+END_SRC
+
+That thing being pointed to is the method receiver. Think of it as a special 0th
+argument passed into the =Do= function that you never have to implicitly pass in.
+
+So what about method receivers?
+
+Well, like all types in Go they can be values or pointers. This means that when
+you call a method that has a non-pointer receiver the entire type is copied and
+passed into the function. This is why non-pointer receivers can't change the
+struct or type they're attached to -- for the most part. There are some types
+that don't require an implicit pointer that can modify the receiver; however
+these are types that usually already pointers, like slices. Additionally, trying
+to be "clever" about this usually ends up with hard-to-parse code -- so try to
+avoid it when you can.
+
+So which should we use: pointer receivers or value receivers?
+
+At first you might want to use value receivers as much as possible, to ensure a
+method doesn't "accidentally" change the receiver when it shouldn't.
+
+But the truth is that outside of some specific situations, it's pretty much
+safer to always use a pointer receiver.
+
+From the [[https://github.com/golang/go/wiki/CodeReviewComments#receiver-type][GitHub wiki on the 'go' repository]]:
+
+#+BEGIN_QUOTE
+Choosing whether to use a value or pointer receiver on methods can be difficult,
+especially to new Go programmers. If in doubt, use a pointer, but there are
+times when a value receiver makes sense, usually for reasons of efficiency, such
+as for small unchanging structs or values of basic type. Some useful guidelines:
+
+ - If the receiver is a map, func or chan, don't use a pointer to them. If the
+   receiver is a slice and the method doesn't reslice or reallocate the slice,
+   don't use a pointer to it.
+ - If the method needs to mutate the receiver, the receiver must be a pointer.
+ - If the receiver is a struct that contains a sync.Mutex or similar
+   synchronizing field, the receiver must be a pointer to avoid copying.
+ - If the receiver is a large struct or array, a pointer receiver is more
+   efficient. How large is large? Assume it's equivalent to passing all its
+   elements as arguments to the method. If that feels too large, it's also too
+   large for the receiver.
+ - Can function or methods, either concurrently or when called from this method,
+   be mutating the receiver? A value type creates a copy of the receiver when
+   the method is invoked, so outside updates will not be applied to this
+   receiver. If changes must be visible in the original receiver, the receiver
+   must be a pointer.
+ - If the receiver is a struct, array or slice and any of its elements is a
+   pointer to something that might be mutating, prefer a pointer receiver, as it
+   will make the intention clearer to the reader.
+ - If the receiver is a small array or struct that is naturally a value type
+   (for instance, something like the time.Time type), with no mutable fields and
+   no pointers, or is just a simple basic type such as int or string, a value
+   receiver makes sense. A value receiver can reduce the amount of garbage that
+   can be generated; if a value is passed to a value method, an on-stack copy
+   can be used instead of allocating on the heap. (The compiler tries to be
+   smart about avoiding this allocation, but it can't always succeed.) Don't
+   choose a value receiver type for this reason without profiling first.
+ - Don't mix receiver types. Choose either pointers or struct types for all
+   available methods.
+ - Finally, when in doubt, use a pointer receiver.
+#+END_QUOTE
+
+So how do we find out if we need to make like the standard library in [[https://github.com/golang/go/blob/a1053ed6107a8301a62be9d1f2da8fa387bfefea/src/net/http/server.go#L713-L718][net/http/server.go#Write()]]?
+
+#+BEGIN_SRC go
+  // Write writes the headers described in h to w.
+  //
+  // This method has a value receiver, despite the somewhat large size
+  // of h, because it prevents an allocation. The escape analysis isn't
+  // smart enough to realize this function doesn't mutate h.
+  func (h extraHeader) Write(w *bufio.Writer) {
+    //...
+  }
+#+END_SRC
+
+This is one of those situations where the answer boils down to: when your
+benchmarks and profiling tells you to.
+
+For even more on this, [[https://stackoverflow.com/a/27775558/62225][check out this great StackOverflow answer]].
+*** Nil Receivers Are Programming Errors, Not Runtime Errors
+There are four things you can do when writing a method on a pointer receiver,
+and the receiver is nil at the time of the function call:
+
+ - panic
+ - return an error
+ - silently return
+ - do nothing
+
+And as strange as it sounds, the best option is "do nothing".
+
+Why?
+
+Well for panicing: the code will panic anyways if the receiver is nil and you
+try to access a field. So the only thing you get out of panicing early is being
+able to set the panic message; not that handy as panics come with a stack trace.
+
+Returning an error means: /every/ *single* method has to return an error. Callers
+/have/ to check the error after /every/ call. Every interface method has to return
+an error.
+
+Silently returning isn't great. Can you imagine trying to debug a complex
+failure in an application because a =nil= receiver caused some logic not to get
+fired?
+
+Given there is no reasonable way for the method executed on a nil receiver to
+protected against this, the remaining option is to simply not worry about
+it. After all a nil receiver is a symptom of a bug that happened elsewhere in
+your code. The most likely cause was a failure to check the error from a
+previous call. That is the place where you should spend your efforts, not
+defensively trying to code around a failure to follow proper error handling.
+
+Don’t check for a nil receiver. Employ high test coverage and vet/lint tools to
+spot unhandled error conditions resulting in nil receivers. 

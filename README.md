@@ -47,3 +47,94 @@ As the _intended_ audience is `developers at Jane writing Go`, that's who we'll
 be listening to for feedback.
 
 That means we'll only be accepting PRs from folks who work at Jane. 
+
+# Use & Updates
+
+The output of this repository is an HTML page, hosted by GitHub pages.
+
+The source for that HTML are a set of [Org](https://orgmode.org/) files that
+describe specific sections.
+
+Additionally, the repo may contain example code that can be used to explain
+certain concepts in the clearest way possible.
+
+## Quick Org Primer 
+
+Org is quite similar to Markdown, so with a few tips you should be able to get
+up and running quite quickly.
+
+### Headings 
+
+Headings in Org use `*` rather than `#` like Markdown. If your editor has an Org
+mode plugin it should also support folding sections under a heading.
+
+### Links 
+
+Links only use square brackets, and the link comes first.
+
+So rather than:
+
+```
+[link text](http://example.com) -> <a href="http://example.com">link text</a>
+```
+
+It looks like this:
+
+```
+[[http://example.com][link text]] -> <a href="http://example.com">link text</a>
+```
+
+### Source Blocks 
+
+Org actually gets us multiple 'blocks'; it actually gives us whatever blocks we
+want -- some of those block types just have special things attached.
+
+For example, a source block in Markdown uses three backticks before and after:
+
+```
+\`\`\` go
+// some source code 
+func doer(ctx context.Context, id int) error {...
+\`\`\`
+```
+
+In Org, we use this:
+
+```
+#+BEGIN_SRC go
+// some source code
+func doer(ctx context.Context, id int) error {...
+#+END_SRC
+```
+
+But we also get note blocks:
+
+```
+#+BEGIN_NOTE 
+I'm a note!
+#+END_NOTE
+```
+
+As well as a few others:
+
+```
+#+BEGIN_QUOTE
+This is what a quote looks like
+#+END_QUOTE
+
+#+BEGIN_WARNING
+This is what a warning looks like
+#+END_WARNING
+
+#+BEGIN_TIP
+This is what a tip looks like
+#+END_TIP
+```
+
+Notes, quotes, warnings, and tips just become div's with a class based on what
+comes after the underscore. So `#+BEGIN_QUOTE` turns into `<div class="QUOTE">`.
+
+Meaning that adding a new type of block just means using a different name after
+`#+BEGIN_` and adding some CSS rules for the new block type.
+
+Neat!

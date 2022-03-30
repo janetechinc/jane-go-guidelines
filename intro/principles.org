@@ -1,0 +1,146 @@
+One of the things that's probably apparent to any of us who have worked in
+multiple languages is that each language has a set of what you could call "core
+principles". These principles aren't about what they /don't/ do; rather that when
+things get tough those principles are what that language focuses on.
+
+Before we talk about the core set of principles for Go, let's take a quick
+digression to talk about a quote from Russ Cox ( the Go team lead ):
+
+#+BEGIN_QUOTE
+Software engineering is what happens to programming when you add time and other
+programmers.
+
+  — Russ Cox
+#+END_QUOTE
+
+Russ is making the distinction between software /programming/ and software
+/engineering/. The former is a program you write for yourself, the latter is a
+product that many people will work with over time. Engineers will come and go,
+teams will grow and shrink, requirements will change, features will be added and
+bugs fixed. This is the nature of software engineering.
+
+I've been using Go for over 5 years now, but I'm not trying to argue that
+seniority gives my views more weight. Rather, the advice I'm going over in this
+document is informed by what I believe to be the guiding principles of Go, as
+well as the principles of Jane.
+
+So what are the guiding principles of Go?
+
+  1. Simplicity
+  2. Clarity
+  3. Productivity
+
+#+BEGIN_NOTE
+You'll notice that I didn't say /performance/, /concurrency/, or anything
+else. There are languages quicker than Go, but they're certainly not as
+simple. There are languages which make concurrency their highest goal but
+they're not as readable nor as productive as Go.
+#+END_NOTE
+
+** Simplicity
+Why should we strive for simplicity? Why is this a core Go value?
+
+#+BEGIN_QUOTE
+Controlling complexity is the essence of computer programming.
+
+  — Brian Kernighan
+#+END_QUOTE
+
+We've all been in a situation where we said "I can't understand this code",
+right? Regardless of whether we only said it to ourselves or not, it's
+happened. We've all worked on programs that where we were too nervous about
+making any changes because we might break something elsewhere. A part you don't
+understand and don't know how to fix. This is complexity.
+
+#+BEGIN_QUOTE
+There are two ways of constructing a software design: One way is to make it so
+simple that there are obviously no deficiencies, and the other way is to make it
+so complicated that there are no obvious deficiencies. The first method is far
+more difficult.
+
+  — C. A. R. Hoare
+#+END_QUOTE
+
+Complexity turns reliable software into unreliable software. It kills projects,
+and causes burnout.
+
+Therefore simplicity is the highest goal of Go. Whatever code we end up writing,
+we should be able to agree that the code we write is simple as we can make it.
+
+** Clarity
+#+BEGIN_QUOTE
+Programs must be written for people to read, and only incidentally for machines to execute. 
+
+  — Hal Abelson and Gerald Sussman
+    Structure and Interpretation of Computer Programs
+#+END_QUOTE
+
+Code is going to be read far more times than it is written. A single line of
+code will be read hundreds if not thousands of times.
+
+So clarity is important because all software, not just Go programs, are written
+by humans to be read by other humans. The fact that the code is also consumed by
+a computer is secondary.
+
+If you want to write a program for yourself, or that only has to run once, or
+you're the only person who's ever going to see & maintain it -- go nuts, do
+whatever works best for you.
+
+But if other people need to contribute to the code, or it's going to be used by
+folks over enough time that requirements, features, or the environment it runs
+in may change; then the goal for the program needs to be that it's /maintainable/.
+
+In other words, every repository of Go code at Jane must be maintainable --
+because even if we discover the secret to immortality you're not going to want
+to have to maintain some Go in a Jane repository forever. You need to be able to
+hand it off to other developers.
+
+Therefore we should be striving to write clear code.
+
+** Productivity
+The last underlying principle to highlight is productivity. Developer
+productivity is a sprawling topic but it boils down to this; how much time do
+you spend doing useful work verses waiting for your tools or hopelessly lost in
+a foreign code-base. Go programmers should feel that they can get a lot done
+with Go.
+
+The joke goes that Go was designed while waiting for a C++ program to
+compile. Fast compilation is a key feature of Go and a key recruiting tool to
+attract new developers. While compilation speed remains a constant battleground,
+it is fair to say that operations which take minutes in other languages, take
+seconds in Go. This helps Go developers feel as productive as their counterparts
+working in dynamic languages without the reliability issues inherent in those
+languages.
+
+More fundamental to the question of developer productivity, Go programmers
+realize that code is written to be read and so place the act of reading code
+above the act of writing it. Go goes so far as to enforce, via tooling and
+custom, that all code be formatted in a specific style. This removes the
+friction of learning a project specific dialect and helps spot mistakes because
+they just look incorrect.
+
+Go programmers don’t spend days debugging inscrutable compile errors. They don’t
+waste days with complicated build scripts or deploying code to production. And
+most importantly they don’t spend their time trying to understand what their
+coworker wrote.
+
+To say that Go is a language designed to be productive is an understanding it is
+built for software design in the large, at industrial scale.
+
+Productivity is what the Go team mean when they say the language must scale.
+
+** Other Notes :noexport:
+Something that may become apparent as you read through this document is that a
+lot of what's laid out here is taking the SOLID principles and applying them to
+Go.
+
+If you haven't ever heard of SOLID, or need a quick refresher I'd recommend [[https://www.digitalocean.com/community/conceptual_articles/s-o-l-i-d-the-first-five-principles-of-object-oriented-design][this
+article from Digital Ocean]]. However, to prevent you from breaking flow I'll go
+over the SOLID principles real quick here.
+
+*** S - Single Responsibility
+https://www.digitalocean.com/community/conceptual_articles/s-o-l-i-d-the-first-five-principles-of-object-oriented-design
+*** O - Open-Closed 
+*** L - Liskov Substitution
+*** I - Interface Segregation
+*** D - Dependency Inversion

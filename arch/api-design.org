@@ -1,0 +1,1165 @@
+So far all the things I've laid out are pretty much just suggestions. They're
+the way I'm going to try and write my Go code, and while I might suggest to make
+some small tweaks in a code review, most of the time they wouldn't stop me from
+approving a PR.
+
+Pretty much everything above are things that can be changed without breaking
+backwards compatibility. Changes like renaming variables, renaming packages, etc
+-- there are refactoring tools which make these changes easy and simple to implement.
+
+However, when it comes to API design I'm going to be less forgiving. And
+I'd argue we should all be the same.
+
+When it comes to the public API of a package, it pays to put considerable
+thought into the initial design, because changing that design later is going to
+be disruptive for people who are already using your API. Changing your public
+API forces the existing user base to have to dedicate engineering resources to
+upgrading across your API break. The larger the break, the more likely this task
+will be considered low impact, but high risk, and likely to be pushed off in
+light of other business priorities.
+
+This is the same whether you're changing function names and arguments in your
+code, or changing the routes your services provide.
+
+So let's talk about Go code APIs, and some guidelines on how we can write good
+APIs.
+
+** Design APIs That Are Hard To Misuse
+#+BEGIN_QUOTE
+APIs should be easy to use and hard to misuse. 
+
+— [[https://www.infoq.com/articles/API-Design-Joshua-Bloch/][Josh Bloch]]
+#+END_QUOTE
+
+If you take anything away from this section, it should be this advice from Josh
+Bloch. If an API is hard to use for simple things, then every invocation will
+look complicated. When the actual invocation of the API is complicated it will
+be less obvious and more likely to be overlooked.
+*** Be wary of functions with several parameters of the same type
+A good example of a simple looking, but hard to use correctly, API is one which
+takes two or more parameters of the same type. Let’s compare two function
+signatures:
+
+#+BEGIN_SRC go
+func Max(a, b int) int
+func CopyFile(to, from string) error
+#+END_SRC
+
+What’s the difference between these two functions? Obviously one returns the
+maximum of two numbers, the other copies a file, but that’s not the important
+thing.
+
+#+BEGIN_SRC go
+Max(8, 10) // 10
+Max(10, 8) // 10
+#+END_SRC
+
+Max is commutative; the order of its parameters does not matter. The maximum of
+eight and ten is ten regardless of if I compare eight and ten or ten and eight.
+
+However, this property does not hold true for =CopyFile=.
+
+#+BEGIN_SRC go
+CopyFile("/tmp/backup", "presentation.md")
+CopyFile("presentation.md", "/tmp/backup")
+#+END_SRC
+
+Which one of these statements made a backup of your presentation and which one
+overwrite your presentation with last week’s version? You can’t tell without
+consulting the documentation. A code reviewer cannot know if you’ve got the
+order correct without consulting the documentation.
+
+The general advice is to try to avoid this situation. Just like long parameter
+lists, indistinct parameter lists are a design smell.
+
+However, a possible solution to this class of problem is to introduce a helper
+type which will be responsible for calling =CopyFile= correctly.
+
+#+BEGIN_SRC go
+type Source string
+
+func (src Source) CopyTo(dest string) error {
+	return CopyFile(dest, string(src))
+}
+
+func main() {
+	var from Source = "presentation.md"
+	from.CopyTo("/tmp/backup")
+}
+#+END_SRC
+
+In this way =CopyFile= is always called correctly and, given its poor API can
+possibly be made private, further reducing the likelihood of misuse.
+** Design APIs For Their Default Use Case
+Quite a few years ago now, [[https://dave.cheney.net/2014/10/17/functional-options-for-friendly-apis][Dave Cheney gave a talk on using functional options]]
+to make APIs easier to use for their default case.
+
+The gist of this talk was you should design your APIs for the common, or
+default, use case. Said another way, your API should not require the caller to
+provide parameters which they don’t care about. More than being hard to use, you
+place the user in the position of guessing reasonable values. If they are lucky,
+the values they YOLO’d have no impact. That’s if they are lucky.
+
+However! This isn't to say that every function should be designed this
+way. Rather, save this for functions that do have a lot of potential options
+that would otherwise require huge config structs or way too many arguments. In
+my experience, the functions that benefit from this the most are
+constructors/initializers --ie, setup functions that you want to be able to call
+with anywhere from zero to many configuration options. These are functions used
+to do all the setup for something like an API or database client.
+
+Remember though, the zero value of a struct should be usable!
+
+As these types of functions tend to require a lot of extra code to get working,
+first consider a the following:
+
+ - would a small 4-6 field configuration struct be simpler?
+ - how many of the options can't be used at the same time; would it make more
+   sense to break this function up into smaller more purpose-driven functions?
+ - can it wait until after the function is called?
+
+That last one is where I usually find myself; rather than a parameter in a
+function that 99% of callers pass the zero value, have a method on the type
+returned that toggles the functionality needed by that 1% of the code.
+
+** Discourage The Use Of =nil= As A Valid Parameter Value
+So this section opened with the suggestion that you shouldn’t force the caller
+of your API into providing you parameters when they don’t really care what those
+parameters mean. This is what I mean when I say design APIs for their default
+use case.
+
+Note: Dave Cheney picks on the =net/http= package a lot. In his words:
+
+#+BEGIN_QUOTE
+I don’t mean to imply it, or the engineers who contributed to it, are bad. On
+the contrary, =net/http= has been tremendously successful and with that success
+has come a process of extension via accretion which makes it a great candidate
+for case studies.
+#+END_QUOTE
+
+Anyways, code!
+
+#+BEGIN_SRC go
+package http
+
+// ListenAndServe listens on the TCP network address addr and then calls
+// Serve with handler to handle requests on incoming connections.
+// Accepted connections are configured to enable TCP keep-alives.
+//
+// The handler is typically nil, in which case the DefaultServeMux is used.
+//
+// ListenAndServe always returns a non-nil error.
+func ListenAndServe(addr string, handler Handler) error {
+#+END_SRC
+
+=ListenAndServe= takes two parameters, a TCP address to listen for incoming
+connections, and =http.Handler= to handle the incoming HTTP request. =Serve= allows
+the second parameter to be =nil=, and notes that usually the caller /will/ pass =nil
+indicating that they want to use =http.DefaultServeMux= as the implicit parameter.
+
+Now the caller of Serve has two ways to do the same thing.
+
+#+BEGIN_SRC go
+http.ListenAndServe("0.0.0.0:8080", nil)
+http.ListenAndServe("0.0.0.0:8080", http.DefaultServeMux)
+#+END_SRC
+
+Both do exactly the same thing.
+
+This =nil= behaviour is viral. The =http= package also has a =http.Serve= helper,
+which you can reasonably imagine that =ListenAndServe= builds upon like this
+
+#+BEGIN_SRC go
+func ListenAndServe(addr string, handler Handler) error {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer l.Close()
+	return Serve(l, handler)
+}
+#+END_SRC
+
+Because =ListenAndServe= permits the caller to pass =nil= for the second parameter,
+=http.Serve= also supports this behaviour. In fact, =http.Serve= is the one that
+implements the "if =handler= is =nil=, use =DefaultServeMux=" logic. Accepting =nil=
+for one parameter may lead the caller into thinking they can pass =nil= for both
+parameters. However calling Serve like this,
+
+#+BEGIN_SRC go
+http.Serve(nil, nil)
+#+END_SRC
+
+results in an ugly panic.
+
+The author of =http.ListenAndServe= was trying to make the API user’s life easier
+in the common case, but possibly made the package harder to use safely.
+
+There is no difference in line count between using =DefaultServeMux= explicitly,
+or implicitly via =nil=.
+
+#+BEGIN_SRC go
+	const root = http.Dir("/htdocs")
+	http.Handle("/", http.FileServer(root))
+	http.ListenAndServe("0.0.0.0:8080", nil)
+#+END_SRC
+
+verses
+
+#+BEGIN_SRC go
+	const root = http.Dir("/htdocs")
+	http.Handle("/", http.FileServer(root))
+	http.ListenAndServe("0.0.0.0:8080", http.DefaultServeMux)
+#+END_SRC
+
+and a was this confusion really worth saving one line?
+
+#+BEGIN_SRC go
+	const root = http.Dir("/htdocs")
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(root))
+	http.ListenAndServe("0.0.0.0:8080", mux)
+#+END_SRC
+
+Give serious consideration to how much time helper functions will save the
+programmer. Clear is better than concise.
+
+Related to this guideline: avoid public APIs with test-only parameters. Avoid
+exposing APIs with values which only differ in test scope. Instead, use public
+wrappers to hide those parameters, use test scoped helpers to set the property
+in test scope.
+
+** Prefer Variable Arguments to =[]T= Parameters
+It’s very common to write a function or method that takes a slice of values.
+
+#+BEGIN_SRC go
+func ShutdownVMs(ids []string) error
+#+END_SRC
+
+This is just an example I made up, but its common to a lot of code I’ve worked
+on. The problem with signatures like these is they presume that they will be
+called with more than one entry. However, what I have found is many times these
+type of functions are called with only one argument, which has to be "boxed"
+inside a slice just to meet the requirements of the functions signature.
+
+Additionally, because the ids parameter is a slice, you can pass an empty slice
+or nil to the function and the compiler will be happy. This adds extra testing
+load because you should cover these cases in your testing.
+
+To give an example of this class of API, Dave Cheney was refactoring a piece of
+logic that required him to set some extra fields if at least one of a set of
+parameters was non zero. The logic looked like this:
+
+#+BEGIN_SRC go
+if svc.MaxConnections > 0 || svc.MaxPendingRequests > 0 || svc.MaxRequests > 0 || svc.MaxRetries > 0 {
+	// apply the non zero parameters
+}
+#+END_SRC
+
+As the if statement was getting very long, he wanted to pull the logic of the
+check out into its own function. This is what I came up with:
+
+#+BEGIN_SRC go
+// anyPostive indicates if any value is greater than zero.
+func anyPositive(values ...int) bool {
+	for _, v := range values {
+		if v > 0 {
+			return true
+		}
+	}
+	return false
+}
+#+END_SRC
+
+This enabled him to make the condition where the inner block will be executed
+clear to the reader:
+
+#+BEGIN_SRC go
+if anyPositive(svc.MaxConnections, svc.MaxPendingRequests, svc.MaxRequests, svc.MaxRetries) {
+        // apply the non zero parameters
+}
+#+END_SRC
+
+However there is a problem with =anyPositive=, someone could accidentally invoke
+it like this
+
+#+BEGIN_SRC go
+if anyPositive() { ... }
+#+END_SRC
+
+In this case =anyPositive= would return false because it would execute zero
+iterations and immediately return false. This isn’t the worst thing in the
+world — that would be if =anyPositive= returned true when passed no arguments.
+
+Nevertheless it would be be better if we could change the signature of
+=anyPositive= to enforce that the caller should pass at least one argument. We can
+do that by combining normal and vararg parameters like this:
+
+#+BEGIN_SRC go
+// anyPostive indicates if any value is greater than zero.
+func anyPositive(first int, rest ...int) bool {
+	if first > 0 {
+		return true
+	}
+	for _, v := range rest {
+		if v > 0 {
+			return true
+		}
+	}
+	return false
+}
+#+END_SRC
+
+Now =anyPositive= cannot be called with less than one argument.
+
+** Let Functions Define The Behaviour They Require
+Let’s say I’ve been given a task to write a method that persists a Document structure to disk.
+
+#+BEGIN_SRC go
+type Document struct {
+        // mo' state
+}
+
+// Save writes the contents of the Document to the file f.
+func (d *Document) Save(f *os.File) error
+#+END_SRC
+
+I could specify this method, =Save=, which takes an =*os.File= as the destination to
+write the =Document=. But this has a few problems.
+
+The signature of =Save= precludes the option to write the data to a network
+location. Assuming that in the new world of lambda functions and microservices,
+network storage is likely to become requirement, the signature of this function
+would have to change, impacting all its callers.
+
+=Save= is also unpleasant to test, because it operates directly with files on
+disk. To verify its operation the test would have to read the contents of the
+file after being written. You would also have to ensure that =f= was written to a
+temporary location and always removed afterwards.
+
+Moreover =*os.File= defines a lot of methods which are not relevant to =Save=, like
+reading directories and checking to see if a path is a symlink. It would be
+useful if the signature of =Save= could describe only the parts of =*os.File= that
+were relevant.
+
+#+BEGIN_SRC go
+// Save writes the contents of d to the supplied ReadWriterCloser.
+func (d *Document) Save(rwc io.ReadWriteCloser) error
+#+END_SRC
+
+Using =io.ReadWriteCloser= we can apply the interface segregation principle to
+redefine =Save= to take an interface that describes more general file shaped
+things. With this change, any type that implements the =io.ReadWriteCloser=
+interface can be substituted for the previous =*os.File=. This makes =Save= both
+broader in its application, and clarifies to the caller of =Save= which methods of
+the =*os.File= type are relevant to its operation. As the author of =Save= I no
+longer have the option to call those unrelated methods on =*os.File= as it is
+hidden behind the =io.ReadWriteCloser= interface. But we can take the interface
+segregation principle a bit further.
+
+Firstly, it is unlikely that if =Save= follows the single responsibility
+principle, it will read the file it just wrote to verify its contents—​that
+should be responsibility of another piece of code.
+
+#+BEGIN_SRC go
+// Save writes the contents of d to the supplied WriteCloser.
+func (d *Document) Save(wc io.WriteCloser) error
+#+END_SRC
+
+We can narrow the specification for the interface we pass to =Save= to just
+writing and closing.
+
+Secondly, by providing =Save= with a mechanism to close its stream, which we
+inherited in this desire to make it still look like a file, this raises the
+question of under what circumstances will =wc= be closed. Possibly =Save= will call
+=Close= unconditionally, or perhaps =Close= will be called in the case of
+success. Neither of these is a good option. Unconditionally closing =wc= after the
+call to =Save= precludes the caller from writing additional data after the
+document is written. Conditionally closing the =WriteCloser=  —  it doesn’t matter
+if its on success, or failure—​means the caller must grow intricate knowledge of
+the operation of =Save=.
+
+#+BEGIN_SRC go
+// Save writes the contents of d to the supplied Writer.
+func (d *Document) Save(w io.Writer) error
+#+END_SRC
+
+A better solution would be to redefine =Save= to take only an io.Writer, stripping
+it completely of the responsibility to do anything but write data to a stream.
+
+By applying the interface segregation principle to our =Save= function, the
+results has simultaneously been a function which is the most specific in terms
+of its requirements—​it only needs a thing that is writable—​and the most general
+in its function, we can now use =Save= to save our data to anything which
+implements =io.Writer=.
+
+As a side effect it is clear that the name of the method is no longer accurate. A better name may be
+
+#+BEGIN_SRC go
+func (d *Document) WriteTo(w io.Writer) error
+#+END_SRC
+
+** Export As Little As Possible
+#+BEGIN_QUOTE
+If you have a function which takes five parameters, you probably missed some. 
+
+— Alan Perlis
+#+END_QUOTE
+
+In this document, I have presented many of the existing configuration patterns,
+those considered idiomatic and commonly in use today, and at every stage asked
+questions like:
+
+ - Can this be made simpler?
+ - Is that parameter necessary?
+ - Does the signature of this function make it easy for it to be used safely?
+ - Does the API contain traps or confusing misdirection that will frustrate?
+
+Declarations provide the groundwork for a straightforward design, but it is the
+active elements of a Go program; the functions, the methods and it’s interfaces
+which bear the weight of the design of a Go program.
+
+If a function is public and does not have anything to do with the package or
+uses none of the packages symbols, remove it. If it's used within the package,
+un-export the function -- or better, move it to a package where it makes sense.
+** Don't Force Allocations On The Callers Of Your API
+This section deals with performance. Most of the time when worrying about the
+performance of a piece of code the overwhelming advice should be (with apologies
+to Brendan Gregg) /don’t worry about it, yet/. However there is one area where I
+counsel developers to think about the performance implications of a design, and
+that is API design.
+
+Because of the high cost of retrofitting a change to an API’s signature to
+address performance concerns, it’s worthwhile considering the performance
+implications of your API’s design on its caller.
+
+*** A Tale Of Two API designs
+Consider these two Read methods:
+
+#+BEGIN_SRC go
+func (r *Reader) Read(buf []byte) (int, error)
+func (r *Reader) Read() ([]byte, error)
+#+END_SRC
+
+The first method takes a =[]byte= buffer and returns the number of bytes read into
+that buffer and possibly an error that occurred while reading. The second takes
+no arguments and returns some data as a =[]byte= or an error.
+
+This first method should be familiar to any Go programmer, it’s
+=io.Reader.Read=. As ubiquitous as =io.Reader= is, it’s not the most convenient API
+to use. Consider for a moment that =io.Reader= is the only Go interface in
+widespread use that returns /both/ a result /and/ an error.
+
+Meditate on this for a moment.
+
+The standard Go idiom, checking the error and if and only if it is =nil= is it safe
+to consult the other return values, does not apply to =Read=. In fact the caller
+must do the opposite. First they must record the number of bytes read into the
+buffer, reslice the buffer, process that data, and only then, consult the
+error. This is an unusual API for such a common operation and one that
+frequently catches out newcomers.
+
+*** A Trap For Young Players?
+Why is it so? Why is one of the central APIs in Go’s standard library written
+like this? A superficial answer might be io.Reader‘s signature is a reflection
+of the underlying [[http://man7.org/linux/man-pages/man2/read.2.html][read(2)]] syscall, which is indeed true, but misses the point of
+this post.
+
+If we compare the API of =io.Reader= to our alternative, =func Read() ([]byte,=
+=error)=, this API seems easier to use. Each call to =Read()= will return the data
+that was read, no need to reslice buffers, no need to remember the special case
+to do this before checking the error. Yet this is not the signature of
+=io.Reader.Read=. Why would one of Go’s most pervasive interfaces choose such an
+awkward API? The answer, I believe, lies in the performance implications of the
+APIs signature on the caller.
+
+Consider again our alternative =Read= function, =func Read() ([]byte, error)=. On
+each call =Read= will read some data into a buffer and return the buffer to the
+caller. Where does this buffer come from? Who allocates it? The answer is the
+buffer is allocated inside =Read=. Therefore each call to =Read= is guaranteed to
+allocate a buffer which would escape to the heap. The more the program reads,
+the faster it reads data, the more streams of data it reads concurrently, the
+more pressure it places on the garbage collector.
+
+The standard libraries’ =io.Reader.Read= forces the caller to supply a buffer
+because if the caller is concerned with the number of allocations their program
+is making this is precisely the kind of thing they want to control. Passing a
+buffer into =Read= puts the control of the allocations into the caller’s hands. If
+they aren’t concerned about allocations they can use higher level helpers like
+[[https://golang.org/pkg/io/ioutil/#ReadAll][ioutil.ReadAll]] to read the contents into a =[]byte=, or [[https://golang.org/pkg/bufio/#Scanner][bufio.Scanner]] to stream
+the contents instead.
+
+The opposite, starting with a method like our alternative =func Read() ([]byte,=
+=error)= API, prevents callers from pooling or reusing allocations–no amount of
+helper methods can fix this. As an API author, if the API cannot be changed
+you’ll be forced to add a second form to your API taking a supplied buffer and
+reimplementing your original API in terms of the newer form. Consider, for
+example, [[https://golang.org/src/io/io.go?s=13136:13214#L378][io.CopyBuffer]]. Other examples of retrofitting APIs for performance
+reasons are the fmt package and the =net/http= package which drove the
+introduction of the =sync.Pool= type precisely because the Go 1 guarantee
+prevented the APIs of those packages from changing.
+
+If you want to commit to an API for the long run, consider how its design will
+impact the size and frequency of allocations the caller will have to make to use
+it.
+** Context
+:PROPERTIES:
+:ID:       6f31c55d-4d30-49f2-b311-52888942088e
+:END:
+One of the packages everybody learns about really early on in Go is the =context=
+package and it's main star: =context.Context=. However, it's also kind of an odd
+duck when you take a closer look at it. It's also one of the first
+implementation details that you should consider as you design your API.
+
+As of right now the =context= package does three things:
+
+ - Cancellation via =context.WithCancel=
+ - Timeout via =context.WithDeadline= or =context.WithTimeout=
+ - A bag of values via =context.WithValue=
+
+All three of these things are useful on their own, but why do we have three
+different types of things in a single package?
+
+I don't know the full story behind how =context= ended up this way, but the reason
+we still have this strange package is the Go 1 API compatibility guarantee. If
+you're not familiar, it's basically this sentence from the [[https://go.dev/doc/go1compat][Go 1 compatibility
+guarantee]]:
+
+#+BEGIN_QUOTE
+It is intended that programs written to the Go 1 specification will continue to
+compile and run correctly, unchanged, over the lifetime of that specification.
+#+END_QUOTE
+
+Basically, outside of some very specific circumstances detailed on that
+compatibility page, we're stuck with the =context= package as it is today. And
+that's not the worst thing in the world, either! What it does mean though, is
+that for some packages from the standard library we need to have not only a
+better understanding of how they work, but also a clear understanding on the
+best practices around using them.
+
+A good example of this is the =sync.WaitGroup= struct. Because Go passes by value
+( via copy ), you can't pass a non-pointer =sync.WaitGroup= into a function; it
+has to be a pointer otherwise it won't work -- and you'll be left with a program
+that hangs forever because.
+
+So why is the context package one of these? Well, it has some gotchas that have
+to be made clear before you really understand how to use it. Go has /fewer/
+[[https://news.ycombinator.com/item?id=17393292][footguns]] than say, C++ -- but it still has a few laying about.
+
+Let's dive into what =context.Context= can be used for then, and see how to best
+make use of this strange little duck.
+
+The best place to start is probably by taking a step back and taking a look at
+the interface defined for us by the =context= package:
+
+#+BEGIN_SRC go
+  type Context interface {
+    Deadline() (deadline time.Time, ok bool)
+    Done() <-chan struct{}
+    Err() error
+    Value(key any) any
+  }
+#+END_SRC
+
+So we've got a nice handy little interface here. What can we do with it?
+
+Well, =Deadline()= will let us know if there is a deadline at all (=ok= will be
+=false= if there's no deadline), or when the deadline /is/. =Done= returns a channel
+that's closed when the work being done on behalf of this context should be
+canceled/finished. =Err()= returns an error if the context has been canceled or
+the deadline has been exceeded. And =Value(any)= returns =nil= if there's no
+matching key, or an =any= if a matching key was found.
+
+Handy, right?
+
+So what should we be watching out for?
+
+*** Grab Bag Of Values
+The very first thing that you should drill into your brain is this:
+=context.Context= should *only ever hold request-local values*. Don't put in stuff
+like loggers, database clients, API clients, or anything else that needs to be
+shared across requests.
+
+I'd even take it a bit further than others might, and say that you should only
+store the following in a =context.Context= using =context.WithValue=:
+
+ - =int= values
+ - =float= values
+ - =string= values
+ - =map[string]string= values
+ - =map[string]any= values
+
+This list is less about type safety, and more about trying to prevent a
+=context.Context= from getting too bloated by saying "put whatever you want in
+it!". You can put other things into a =context.Context=, but if you try and stick
+to only the types above you'll probably encounter fewer problems overall.
+
+**** Contexts And Keys
+So what about the keys? You can use any type you want, as the key is type
+=any=. But what types are better -- or rather, what types should you prefer?
+
+If you look around, some of the most common types you'll see are =string= and =int=
+keys. Or rather, custom types based on =string= or =int=:
+
+#+BEGIN_SRC go
+  const keyForMetadata string = "boop"
+
+  // later, in side a function within the package:
+  ctx := context.WithValue(ctx, keyForMeatadata, metadata)
+#+END_SRC
+
+Let's first take a look at what this example is doing /right/. Right off the bat,
+using a constant is a good idea, because then you don't have to worry about some
+piece of code changing the key in-between when you set a value and when you
+later wish to fetch it. Additionally, by using an unexported value, it means
+that users can't use the key to get the value when we don't want.
+
+Right?
+
+#+BEGIN_SRC go
+  // ex/ex.go
+  package ex
+
+  import "context"
+
+  const key string = "what"
+
+  func PutIntoCtx(ctx context.Context) context.Context {
+    return context.WithValue(ctx, key, "some value")
+  }
+
+  // main.go
+  package main
+
+  import (
+    "context"
+    "fmt"
+
+    "github.com/seanhagen/playground/ex"
+  )
+
+  func main() {
+    ctx := context.Background()
+
+    ctx = ex.PutIntoCtx(ctx)
+
+    out := ctx.Value("what")
+
+    fmt.Printf("got: %v\n", out)
+  }
+#+END_SRC
+
+This prints out =got: some value= -- probably not what the package author
+intended, right? If the data stored in that key is not meant to change, allowing
+users to get their hands on it is not great.
+
+So how do we fix this?
+
+Well, the simplest way is to make this change to =ex/ex.go=:
+
+#+BEGIN_SRC go
+type ctxkey string 
+
+const key ctxkey = "what"
+#+END_SRC
+
+Because checking equality on =any= requires checking the /type/ as well as the
+value we don't have to worry about users getting to our data.
+
+Is there anything we could do to make this better?
+
+Yup!
+
+#+BEGIN_SRC go
+type ctxkey struct{}
+
+var key = ctxkey{}
+#+END_SRC
+
+This is useful for at least two reasons.
+
+One is that if you forget to use =key= and instead put =ctxkey{}= everything still
+works; ~ctxkey{} == ctxkey{}~ is true. That's pretty great; it means we could
+probably even just get rid of the ~var key = ctxkey{}~.
+
+The other is that standardizing on =struct{}= as the type used for context keys
+means one less potential allocation to worry about! This is one of those things
+that isn't a big deal until it is; sticking with =struct{}= may or may not save
+you some pain down the road. However, as "use =struct{}= for context keys" is
+pretty easy to remember I think it's a good practice for us to put in place.
+
+**** When To Put Something In A Context
+So now that we've covered how to put stuff in a context, and what type to use
+for the keys, let's talk about /when/ and /why/ to put stuff *into* a =context.Context=.
+
+As the most common use of contexts is withing handlers for HTTP ( or GRPC )
+requests, that's what we'll be talking about for the most part. There are some
+other use-cases, but this document is already huge and you probably won't
+encounter those cases very often.
+
+Let's think about some things that you might put into a =context.Context= that you
+want to be able to pull out at any point during the request. Stuff like:
+
+  - request ID
+  - trace or span ID
+  - user ID, and maybe one or two other user details
+  - /maybe/, *maybe*, MAYBE..... maybe some request parameters?
+
+Those seem pretty reasonable -- but why the hesitation around request
+parameters? Well, it has to do with how contexts work.
+
+If I asked you to guess how the unexported concrete type or types that fulfill
+the =context.Context= interface work, what would you say?
+
+My first guess is there's an unexported struct, with unexported fields, that
+does all the work of managing timeouts or deadlines. There's something to manage
+the channel for the =Done()= method. Some code for setting an =error= value on an
+internal field when the context is canceled or times out that gets returned by
+=Err()=. Lastly, some kind of map or other data store for the values added by
+=WithValue=.
+
+If you guessed what I did, you'd be as wrong as I was!
+
+Turns out, each =WithDeadline=, =WithTimeout=, =WithCancel=, and =WithValue= call pushes
+the new context onto the head of a linked list, and returns the head.
+
+Now, I don't ever want to see anything like this many values shoved into a
+context, but here's an example to show why keeping the number of values you put
+into a context low is a good idea:
+
+#+BEGIN_SRC go
+  package main
+
+  import (
+    "context"
+    "fmt"
+    "time"
+
+    "github.com/davecgh/go-spew/spew"
+  )
+
+  func main() {
+    ctx := context.Background()
+
+    ctx = context.WithValue(ctx, "what", "boop")
+
+    for i := 1; i < 1_000_000; i++ {
+      ctx = context.WithValue(ctx, fmt.Sprintf("key %v", i), i*i)
+    }
+
+    now := time.Now()
+    v := ctx.Value("what")
+    diff := time.Now().Sub(now)
+    fmt.Printf("took: %v\ngot: %v\n", diff, v)
+  }
+#+END_SRC
+
+This is what gets printed out:
+
+#+BEGIN_SRC
+took: 86.201678ms
+got: boop
+#+END_SRC
+
+Ouch.
+
+I don't think we're ever going to put that much stuff into a context, but it's
+good to keep the fact that =context.Context= is really a linked list in your
+head. Add to the fact that the context you get from a =*http.Request= ( or passed
+into your GRPC handler ) may already have a bunch of nodes in the list, and you
+should be starting to see why I advise against putting too much into a context
+with =context.WithValue=.
+
+This is also why I'd advocate using a =map[string]string= if you want
+to put multiple values at once into a context.
+
+All that was basically a long-winded way to say: try to store as little as
+possible in the request =context.Context=.
+
+**** How To Put Something In A Context
+Okay, so we've established the following:
+
+ - use =struct{}= for context keys
+ - store basic types, =map[string]string=, or =map[string]any=
+ - store as little as you can get away with
+
+Now let's talk about /how/ to store something in a context.
+
+This is not how:
+
+#+BEGIN_SRC go
+ctx = context.WithValue(r.Context(), requests.CtxKey, requests.GenerateID(r))
+#+END_SRC
+
+How can we tell -- from one line of code -- that this isn't the right way?
+
+Because we have to use two exported values from the =requests= package to set the
+value. We've already spoken about exporting as little as possible and why that's
+important. Another thing to consider is that by exporting the key and a method
+to generate a request ID, we're leaving the actual /implementation/ of /putting/
+/the ID into the context/ up to the user.
+
+So let's think about /how/ we can put stuff into a context while still following
+all the guidelines we've established so far.
+
+Right off the bat we know that we don't want to export the context key, constant
+or not. In most cases I'd argue users don't need to know the specifics of
+getting a value out of a context -- they just want the value. And that's just in
+the cases where they actually want the value, and not because they need the
+value to do something else our package should be handling.
+
+Rather than pontificate, let's look at an example: request ID!
+
+Let's say there was a requirement that all our logs contain a 'request-id' field
+( we're using structured logging in this example ).
+
+If you're using a structured logging library like [[https://pkg.go.dev/go.uber.org/zap][zap]] your first thought might
+be to use something like =With(...zap.Field)=:
+
+#+BEGIN_SRC go
+requestLogger := zap.With(zap.String("request-id", requests.GenerateID(r)))
+#+END_SRC
+
+If your next thought is to do this:
+
+#+BEGIN_SRC go
+ctx = context.WithValue(ctx, requests.LoggerCtxKey, requestLogger)
+#+END_SRC
+
+Then you need to re-read the entire [[id:6f31c55d-4d30-49f2-b311-52888942088e][Context]] section.
+
+What else could we do? Well we could pass the logger down into any function that
+might need to write something to the logs. That's fine if you are A) creating
+the logger in your handler and not middleware, and B) your handler doesn't call
+many functions.
+
+If you can get away with every handler not ever needing to pass the logger down
+then huzzah! However, as I'd argue that generating the request ID should in
+middleware and not your handler, that's no good. So that's both points A & B
+shot down, so passing the logger down into each function is not a great
+solution.
+
+What if inverted things a bit? Let's look at two alternate solutions.
+
+However, both start in the same place:
+
+#+BEGIN_SRC go
+  package request
+
+  type requestIdKey struct{}
+
+  func IdInCtx(ctx context.Context, r *http.Request) context.Context {
+    return context.WithValue(ctx, requestIdKey{}, generateID(r))
+  }
+#+END_SRC
+
+From our middleware or handler this is called as =request.IdInCtx(ctx, r)=, so
+that's nice. Also, our context key is a =struct{}= and un-exported, also
+good. Lastly, all the implementation details stay inside the =request= package --
+the key, as well as function for generating the request ID are all un-exported.
+
+So how do we /use/ the request ID?
+
+Well, for our logging example there are two potential ways. Here's the first:
+
+#+BEGIN_SRC go
+  package request
+
+  type RequestLogger interface {
+    With(args ...interface{}) RequestLogger
+  }
+
+  func Logger(ctx context.Context, log RequestLogger) (RequestLogger, error) {
+    v := ctx.Value(requestIdKey)
+    if v == nil {
+      return nil, fmt.Errorf("no request ID in context")
+    }
+
+    id, ok := v.(requestID)
+    if !ok {
+      return nil, fmt.Errorf("invalid type stored in context")
+    }
+
+    nl := log.With("request-id", id)
+  }
+
+  // in some function somewhere
+  l := request.Logger(ctx, zap.L())
+  l.Info("did thing to foobar")
+#+END_SRC
+
+If you're a smart cookie, you've already noticed at least one problem. Neither
+the =zap.Logger= or =zap.SugaredLogger= fit our =RequestLogger= interface. Welcome to
+fun with interfaces, I'm sure you'll have a great time.
+
+But we want some kind of interface, right? We don't want our =request= package to
+know or care /what/ logging library we use, it just wants to add a field.
+
+What if we change it up to this:
+
+#+BEGIN_SRC go
+  package request
+
+  type AddFieldToLoggerFn func(key, value string)
+
+  func AddIDToLogger(ctx context.Context, fn AddFieldToLoggerFn) error {
+    v := ctx.Value(requestIdKey)
+    if v == nil {
+      return fmt.Errorf("no request ID in context")
+    }
+
+    id, ok := v.(requestID)
+    if !ok {
+      return fmt.Errorf("invalid type stored in context")
+    }
+
+    fn("request-id", id)
+
+    return nil
+  }
+#+END_SRC
+
+Better, but still not great. How do we ensure that the user uses =key= and =value=
+in the function properly? Well, we can't. Still, better than the interface
+version, right?
+
+However, before we go further down this road, let's take a step back -- maybe we
+need to think to our foundations; maybe there's something in the SOLID
+principles that will guide us.
+
+Turns out, there is! Fancy that.
+
+In this case, it's the Single Responsibility Principle.
+
+Think about what it is we're trying to do here: we want to have the =request-id=
+included as a field in every log message generated inside a handler. So far, the
+way we've been going about this is to add more to our =request= package --
+specifically, trying to get it to be able to add a field to a logger without
+knowing too much about the logger.
+
+We haven't looked at the rest of the requests package, but adding "know how to
+add a field to a structured logger" doesn't really /feel/ like it belongs in a
+=request= package. It actually feels like "add a field to a structured logger"
+belongs inside the handler; it is probably adding other fields like user ids, or
+even trace & span ids.
+
+So with that in mind, let's try something else instead. I've included the
+'common' function we defined earlier, just in case you forgot what it looked like:
+
+#+BEGIN_SRC go
+  package request
+
+  type requestIdKey struct{}
+
+  type RequestID string
+
+  const RequestIDKey = "request-id"
+
+  const invalidRequestID RequestID = "invalid-ctx-no-request-id"
+
+  func IdInCtx(ctx context.Context, r *http.Request) context.Context {
+    return context.WithValue(ctx, requestIdKey{}, generateID(r))
+  }
+
+  func IdFromCtx(ctx context.Context) RequestID {
+    v := ctx.Value(requestIdKey{})
+
+    if id, ok := v.(RequestID); ok {
+      return id
+    }
+
+    return invalidRequestID
+  }
+#+END_SRC
+
+Wait, wasn't I just complaining a little while ago that this means we can't
+ensure they're using the key & value properly?
+
+Well, that's still true; but I'd argue that that's something that should be
+caught in a code review. The fact is that "using the right key for a request id
+when adding a field to a structured logger" isn't really something you can get
+in code -- unless you want to heavily couple your package to whatever logging
+library you're currently using. Which is something that should also be caught
+and discouraged in a code review. So, given we can't control it in code let's
+instead leave enforcing using the proper key to code reviews.
+
+Instead, let's try to just make it real easy to get the request ID. In this case
+that means creating a simple method that pulls the request ID out of the context
+and returns it. In the case the context doesn't have a request ID, return a
+'invalid context' ID.
+
+It's a debatable point, but I'd rather have 'invalid-ctx-no-request-id' in my
+logs instead of having a request fail because a developer got some contexts
+mixed up and used the wrong one. 
+
+However, this method has some additional benefits.
+
+For one, we've suddenly made these two functions much more useful. Before, our
+solution was only focused on logging -- or rather, adding a field to a
+logger. By instead focusing on the kind of behaviour the =request= package should
+be providing, we've created a function that can be used in way more places than
+just adding a field to a structured logger.
+
+Now we've got a function that can pull the request ID out of a context for when:
+
+ - we're reporting an error to an external service
+ - we're sending an event to a service like Mixpanel
+ - we're annotating a trace with request info
+ - we're adding some values to a header before returning from middleware
+
+Oh, and we can use it when writing a log, of course.
+
+*** To Cancel, Or Not To Cancel
+Now let's talk about the other use of contexts: cancellation.
+
+A good place to start is why we even care about being able to cancel something
+before it's finished.
+
+For folks coming from languages like Ruby, the idea of something like being able
+to cancel a function from running might sound a bit odd. However, even if you're
+brand-new to Go, you've probably heard about [[https://golangbot.com/goroutines/][goroutines]] and how goroutines are
+key to Go's magical "easy concurrency". All this hullabaloo about cancellation
+has to do with the fact that goroutines need some way to be told "hey, I need to
+you stop doing what you're doing and exit promptly".
+
+Folks coming from languages with threads ( or some equivalent ) probably wonder
+why we can't just stop or kill goroutines directly, via a handle or some
+built-in thread management functions. Unfortunately, unlike threads, goroutines
+are a "launch and forget" kind of thing. The only way you have to tell a
+goroutine to stop without also killing your entire program is through a context
+( or a channel, but we're not going over those right now ).
+
+So we're all on the same page, here's what launching a goroutine looks like:
+
+#+BEGIN_SRC go
+  func boop() {
+    <-time.After(time.Second)
+    fmt.Printf("boop!\n")
+  }
+
+  func main() {
+    fmt.Printf("Launching goroutine!\n")
+    go boop()
+    time.Sleep(time.Millisecond * 500)
+    
+    fmt.Printf("Launching another goroutine!\n")
+    go boop()
+    time.Sleep(time.Millisecond * 500)
+
+    fmt.Printf("Launching one last goroutine!\n")
+    go boop()
+    time.Sleep(time.Millisecond * 500)
+  }
+#+END_SRC
+
+Real quick, what do you think this program prints out?
+
+If you guessed this:
+
+#+BEGIN_SRC
+Launching goroutine!
+Launching another goroutine!
+boop!
+Launching one last goroutine!
+#+END_SRC
+
+Well, I don't know what to say. Congratulations?
+
+However, if you didn't guess that, you're probably wondering where the two other
+missing =boop!= lines are.
+
+Well, this is the first thing we've got to deal with when using goroutines. When
+we get to the end of =main.main= /all running goroutines stop/. So that's one way to
+cancel a goroutine: call =os.Exit(1)=!
+
+I'm guessing you don't want to have to cause your program to exit ( and
+hopefully be restarted ) ever time you want to stop a goroutine. For one thing,
+it means you could never have more than one goroutine running at a time. As
+incoming requests for both HTTP and GRPC services are handed off to goroutines,
+this is less than ideal.
+
+So what other options do we have for stopping a goroutine?
+
+Well, as we're still talking about contexts, you can probably guess what the
+answer is.
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+func boop(ctx context.Context, id int) {
+	tick := time.NewTicker(time.Second)
+	
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Printf("Context cancelled, quitting goroutine %v!\n", id)
+
+		case <-tick.C:
+			fmt.Printf("Boop from goroutine %v\n", id)
+		}
+	}
+}
+
+func main() {
+	ctx := context.Background()
+
+	for i:=1; i<=3; i++ {
+		go boop(ctx, i)
+	}
+
+	time.Sleep(time.Second * 10)
+
+	fmt.Printf("exiting!")
+}
+#+END_SRC
+
+*** Final Thoughts
+
+
+Let's take a step back for a moment and consider the purpose of a
+=context.Context=. It's a way to store values that /may/ be needed later on during a
+request; whether that request is a function call or an HTTP request doesn't
+really matter. It's also a way to pass into a function a way of saying "hey,
+just stop, I don't need you to do any more work".
+
+Both of these behaviours are valuable. We don't want a database call to continue
+when the request was canceled by the user. At the same time, we need a single
+way to handle passing values down the call stack that /might/ be required.
+
+One thing you're probably wondering is why I'm saying "might" and "may" or
+"maybe" when talking about the values shoved into a =context.Context= using
+=context.WithValue=. Well, the reason is the untyped nature of what gets stored in
+a context. While this isn't correct, you can think of the data being shoved into
+a =map[any]any=. So not only are the keys untyped, but so are the
+values that are saved. Additionally, =context.WithValue= is copy-on-write, meaning
+no storing stuff like =sync.Mutex=.
+
+So what kinds of things /should/ we put in a =context.Context=?
+
+A good place to start is 
+
+
+ 
+
+Only use to store values you *might* need ( ie, when you need extra information
+when reporting an error to Rollbar, an event to Mixpanel, etc ). Additionally,
+*only* store values /scoped to a request/. Don't store loggers, database clients, or
+anything that needs to be around for every request. Store values you get from
+a request ( ie, from parameters, headers, etc ) or values you look up or
+calculate that only live for the scope of that request.
+
+There are cases where both of those things can be true. Consider the case of
+creating a sub-logger ( ie, `zap.Named()` ) that has been configured with a
+bunch of request specific fields ( like a request id, for example ). 
+
+Don't use them for cancellation. 
+
+*Sources*:
+ - https://www.calhoun.io/pitfalls-of-context-values-and-how-to-avoid-or-mitigate-them/
+ - https://dave.cheney.net/2017/08/20/context-isnt-for-cancellation 

@@ -1,0 +1,1036 @@
+** Errors
+
+Error handling is important for reliable programs. Error handling is as
+important, if not more important than the rest of your code. Error handling is
+as important as checking a loop index for the exit condition, or checking the
+result of a shift operation, or testing the result of a multiplication is within
+the expected bounds, that’s how fundamental error handling is to Go.
+
+And, just like shifting or comparisons or multiplication, error handling is a
+first class responsibility of all Go programmers. So important that Go makes it
+a first class citizen. Because you have to plan for failure.
+
+When you write to a network, assume the other side never gets the request. When
+you write to a channel, assume the other side never picks up the write. When you
+write to a file, expect it not to exist or be un-writable.
+
+The =error= interface is the key to Go’s composable error handling story.
+
+*** Errors Are Just Values
+This statement is almost universal in the Go programmer’s phrase book, but what
+do Go programmers mean when they say "errors are just values", and what does
+this technique imply? By way of explanation, consider the counter example of
+=panic= and =recover=, often mistaken for exceptions.
+
+=panic= and =recover=, two keywords added to the language for a single
+purpose. =recover= can only be used for one purpose; to access a value previously
+passed to =panic=. If that wasn’t enough =recover='s use case is so specific, it can
+only be used inside a =defer= block. You cannot use =recover= for any other
+purpose, it can only be used in concert with =panic=.
+
+This pair of features sit by themselves in a corner of the language. How’s that
+for non orthogonal?
+
+By contrast, error values are not limited to the rarefied semantics of =panic= and
+=recover=.
+
+However, spend enough time in Go and you may notice that there are a few core
+strategies for handling errors.
+
+#+BEGIN_NOTE
+As an aside, you should never inspect the output of the =error.Error()=
+method. The =Error= method on the =error= interface exists for humans, not code.
+
+The contents of that string belong in a log file, or displayed on screen. You
+shouldn’t try to change the behaviour of your program by inspecting it.
+
+The only place where it's even close to okay to inspect the output of
+=error.Error= is inside a test; however consider it a code smell and act
+appropriately.
+#+END_NOTE
+
+**** Sentinel Errors
+The first category of error handling is what are typically called sentinel errors.
+
+#+BEGIN_SRC go
+if err == ErrSomething {
+#+END_SRC
+
+The name descends from the practice in computer programming of using a specific
+value to signify that no further processing is possible. So to with Go, we use
+specific values to signify an error.
+
+Examples include values like =io.EOF= or low level errors like the constants in
+the =syscall= package, like =syscall.ENOENT=.
+
+There are even sentinel errors that signify that an error /did not/ occur, like
+=go/build.NoGoError=, and =path/filepath.SkipDir= from =path/filepath.Walk=.
+
+Using sentinel values is the least flexible error handling strategy, as the
+caller must compare the result to predeclared value using the equality
+operator. This presents a problem when you want to provide more context, as
+returning a different error would will break the equality check.
+
+With the addition of wrapping errors in Go 1.13, we now have the =%w= formatting
+key to use with =fmt.Errorf=. This means that we can check to see the type of an
+error by using =errors.Is=. This is great when we have an error that we want to
+see if it's wrapped an =io.EOF= or something. However, wrapping errors can still
+have downsides, which we'll get into a bit later.
+
+***** Sentinel errors become part of your public API
+If your public function or method returns an error of a particular value then
+that value must be public, and of course documented. This adds to the surface
+area of your API.
+
+If your API defines an interface which returns a specific error, all
+implementations of that interface will be restricted to returning only that
+error, even if they could provide a more descriptive error.
+
+We see this with =io.Reader=. Functions like =io.Copy= require a reader
+implementation to return exactly =io.EOF= to signal to the caller no more data,
+but that isn’t an error. 
+
+***** Sentinel errors create a hard dependency between packages
+By far the worst problem with sentinel error values is they create a source code
+dependency between two packages. As an example, to check if an error is equal to
+=io.EOF=, your code must import the =io= package.
+
+This specific example does not sound so bad, because it is quite
+common. However, imagine the coupling that exists when many packages in your
+project export error values, which other packages in your project must import to
+check for specific error conditions.
+
+To quote Dave Cheney:
+
+#+BEGIN_QUOTE
+Having worked in a large project that toyed with this pattern, I can tell you
+that the spectre of bad design–in the form of an import loop–was never far from
+our minds.
+#+END_QUOTE
+
+***** Conclusion: try to avoid sentinel errors
+So, our advice is to avoid using sentinel error values in the code you
+write. There are a few cases where they are used in the standard library, but
+this is not a pattern that you should emulate.
+
+If someone asks you to export an error value from your package, you should
+politely decline and instead suggest an alternative method, such as the ones
+we'll discuss next.
+
+**** Custom Error Types
+Error types are the second form of Go error handling we'll discuss.
+
+#+BEGIN_SRC go
+if err, ok := err.(MyError); ok { … }
+#+END_SRC
+
+An error type is a type that you create that implements the error
+interface. Below you can see the definition of the =MyError= type. This custom
+error type tracks the file and line, as well as a message explaining what
+happened.
+
+#+BEGIN_SRC go
+  type MyError struct {
+    Msg string
+    File string
+    Line int
+  }
+
+  func (e *MyError) Error() string { 
+    return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
+  }
+
+  // later, somewhere in the code
+  return &MyError{"Something happened", "server.go", 42}
+#+END_SRC
+
+Because =MyError= error is a type, callers can use type assertion to extract the
+extra context from the error.
+
+#+BEGIN_SRC go
+err := something()
+switch err := err.(type) {
+case nil:
+        // call succeeded, nothing to do
+case *MyError:
+        fmt.Println(“error occurred on line:”, err.Line)
+default:
+// unknown error
+}
+#+END_SRC
+
+A big improvement of error types over error values is their ability to wrap an
+underlying error to provide more context.
+
+An excellent example of this is the =os.PathError= type which annotates the
+underlying error with the operation it was trying to perform, and the file it
+was trying to use.
+
+#+BEGIN_SRC go
+// PathError records an error and the operation
+// and file path that caused it.
+type PathError struct {
+        Op   string
+        Path string
+        Err  error // the cause
+}
+
+func (e *PathError) Error() string
+#+END_SRC
+
+***** Problems with error types
+So because the caller can use a type assertion or type switch, error types must
+be made public.
+
+If your code implements an interface whose contract requires a specific error
+type, everywhere you want to implement that interface need to depend on the
+package that defines the error type.
+
+This intimate knowledge of a package’s types creates a strong coupling with the
+caller, making for a brittle API.
+
+***** Conclusion: avoid error types when possible
+While error types are better than sentinel error values, because they can
+capture more context about what went wrong, error types share many of the
+problems of error values.
+
+So again my advice is to avoid error types, or at least, avoid making them part
+of your public API.
+
+**** Opaque Errors
+Now we come to the third category of error handling.
+
+In the words of Dave Cheney:
+
+#+BEGIN_QUOTE
+In my opinion this is the most flexible error handling strategy as it requires
+the least coupling between your code and caller.
+
+I call this style opaque error handling, because while you know an error
+occurred, you don’t have the ability to see inside the error. As the caller, all
+you know about the result of the operation is that it worked, or it didn’t.
+#+END_QUOTE
+
+This is all there is to opaque error handling – just return the error without
+assuming anything about its contents. If you adopt this position, then error
+handling can become significantly more useful as a debugging aid.
+
+#+BEGIN_SRC go
+import “github.com/quux/bar”
+
+func fn() error {
+        x, err := bar.Foo()
+        if err != nil {
+                return err
+        }
+        // use x
+}
+#+END_SRC
+
+For example, =Foo='s contract makes no guarantees about what it will return in the
+context of an error. The author of =Foo= is now free to annotate errors that pass
+through it with additional context without breaking its contract with the
+caller.
+
+However, there are times when you don't have a choice, you have to check for a
+sentinel error or a specific error type. But there is a way around this while
+still trying to keep ourselves on the path of "use opaque errors". That way to
+do it is the fantastic =Is= method which has been with us since Go 1.13.
+
+So while it's best to try and avoid checking for specific types of errors, if
+you do, use =errors.Is=.
+
+**** Constant Errors
+A fourth type of error? But you said there were only three!
+
+You're not wrong, but we also weren't really lying.
+
+Constant errors are a potential way to have sentinel errors without some of the
+drawbacks. This isn't a way to side-step everything written above; rather, it's
+a way to provide sentinel errors that deals with some of their drawbacks.
+
+So, to recap:
+
+#+BEGIN_QUOTE
+Sentinel errors are bad, they introduce strong source and run time coupling, but
+are sometimes necessary. io.EOF is one of these sentinel values. Ideally a
+sentinel value should behave as a constant, that is it should be immutable and
+fungible.
+#+END_QUOTE
+
+That comes from [[https://dave.cheney.net/2016/04/07/constant-errors][Dave Cheney's article on 'constant errors']], which is what this
+section is based on.
+
+So let's talk about two of the issues we've got with sentinel errors by
+examining =io.EOF= a bit.
+
+First up: =io.EOF= is a public variable. Any code that imports the =io= package
+could technically change the value of =io.EOF=. It wouldn't really /do/ all that
+much; everything that compares that an error is equal to =io.EOF= should still
+work just fine. Mostly, this is an issue because it could create potentially
+very confusing problems to try and debug.
+
+#+BEGIN_SRC go
+fmt.Println(io.EOF == io.EOF) // true
+x := io.EOF
+fmt.Println(io.EOF == x)      // true
+	
+io.EOF = fmt.Errorf("whoops")
+fmt.Println(io.EOF == io.EOF) // true
+fmt.Println(x == io.EOF)      // false
+#+END_SRC
+
+The second problem is that =io.EOF= behaves more like a singleton instead of a
+constant. Even if we follow the exact procedure used by the io package to create
+our own EOF value, they are not comparable.
+
+#+BEGIN_SRC go
+err := errors.New("EOF")   // io/io.go line 38
+fmt.Println(io.EOF == err) // false
+#+END_SRC
+
+Combine these properties and you have a set of weird behaviours stemming from
+the fact that sentinel error values in Go, those traditionally created with
+=errors.New= or =fmt.Errorf=, are not constants.
+
+***** Quick =error= interface re-primer
+Let’s recap how the error interface works in Go. Any type with an =Error() string=
+method fulfils the =error= interface. This includes primitive types like =string=,
+including constant strings.
+
+***** Implementing constant errors
+Consider this error implementation.
+
+#+BEGIN_SRC go
+type Error string
+
+func (e Error) Error() string { return string(e) }
+#+END_SRC
+
+It looks similar to the [[https://github.com/golang/go/blob/master/src/errors/errors.go#L63][errors.errorString]] implementation that powers
+=errors.New=. However unlike =errors.errorString= this type is a constant
+expression.
+
+#+BEGIN_SRC go
+const err = Error("EOF") 
+const err2 = errorString{"EOF"} // const initializer errorString literal is not a constant
+#+END_SRC
+
+As constants of the =Error= type are not variables, they are immutable.
+
+#+BEGIN_SRC go
+const err = Error("EOF") 
+err = Error("not EOF") // error, cannot assign to err
+#+END_SRC
+
+Additionally, two constant strings are always equal if their contents are equal,
+which means two =Error= values with the same contents are equal.
+
+#+BEGIN_SRC go
+const err = Error("EOF") 
+fmt.Println(err == Error("EOF")) // true
+#+END_SRC
+
+Said another way, equal =Error= values are the same, in the way that the constant
+=1= is the same as every other constant =1=.
+
+#+BEGIN_SRC go
+const eof = Error("eof")
+
+type Reader struct{}
+
+func (r *Reader) Read([]byte) (int, error) {
+        return 0, eof
+}
+
+func main() {
+        var r Reader
+        _, err := r.Read([]byte{})
+        fmt.Println(err == eof) // true
+}
+#+END_SRC
+
+Could we change the definition of =io.EOF= to be a constant? It turns out that
+this compiles just fine and passes all the tests, but it’s probably a stretch
+for the Go 1 contract.
+
+So, to sum up: if you absolutely do need to export a sentinel error from a
+package, consider making it a constant error. It should make your code easier to
+understand, and hopefully make testing easier too!
+
+*** Errors Should Be Opaque
+We've already covered this above when we went over the error types, but it's
+worth restating:
+
+#+BEGIN_QUOTE
+With a sufficient number of users of an API, it does not matter what you promise
+in the contract, all observable behaviours of your system will be depended on by
+somebody.
+
+  — [[https://www.hyrumslaw.com/][Hyram’s Law]]
+#+END_QUOTE
+
+Programmers will rely on whatever behaviour, guaranteed or not, they observe
+from your API. Simply put, the more observable state your API returns, the
+larger the yoke of backwards compatibility you are implicitly committing to.
+
+To the caller, the type and contents of an error value, if not =nil=, should be
+considered opaque. To do otherwise introduces brittle coupling between the
+function and its caller.
+
+The exception to this rule are are sentinel values from the standard library
+like io.EOF. However, these are the exception to the rule; not a pattern to be
+emulated.
+
+*** Assert Errors For Behaviour, Not Type
+So what do you do when you *do* need to check the type of an error?
+
+The common contract for functions which return a value of the interface type
+=error=, is the caller should not presume anything about the state of the other
+values returned from that call without first checking the error. In the *majority*
+of cases, error values returned from functions should be opaque to the
+caller. That is to say, a test that error is =nil= indicates if the call succeeded
+or failed, and that’s all there is to it.
+
+The methodology we recommend you follow is this: if a function can return an
+error, you cannot make any assumptions about the state of any other values
+returned until you check the error. If it was found that the error was set (ie,
+not =nil=), then the state of those other values is unknown.
+
+HOWEVER.
+
+There are a small number of cases that require that the caller investigate the
+nature of the error to decide if it is reasonable to retry the operation. A
+common request for package authors is to return errors of a known public type,
+so the caller can type assert and inspect them.
+
+Quoting Dave Cheney again:
+
+#+BEGIN_QUOTE
+I believe this practice leads to a number of undesirable outcomes:
+
+ 1. Public error types increase the surface area of the package’s API.
+ 2. New implementations must only return types specified in the interface’s
+    declaration, even if they are a poor fit. This also introduces coupling. My
+    implementation must import the package that declares the specific error type
+    required.
+ 3. The error type cannot be changed or deprecated after introduction without
+    breaking compatibility, making for a brittle API.
+
+You should feel no more comfortable asserting an error is a particular type than
+they would be asserting the string returned from =Error()= matches a particular
+pattern.
+#+END_QUOTE
+
+Instead he presents a suggestion that permits package authors and consumers to
+communicate about their intention, without having to overly couple their
+implementation to the caller. This suggestion fits the =has a= /behaviour/ nature
+of Go’s implicit interfaces, rather than the =is a= /subtype of/ nature of
+inheritance based languages. Consider this example:
+
+#+BEGIN_SRC go
+func isTimeout(err error) bool {
+        type timeout interface {
+                Timeout() bool
+        }
+        te, ok := err.(timeout)
+        return ok && te.Timeout()
+}
+#+END_SRC
+
+The caller can use =isTimeout= to determine if the error is related to a timeout,
+and if so confirm if the error was timeout related, all without knowing anything
+about the type, or the original source of the =error= value.
+
+Gift wrapping errors, usually by libraries that annotate the error path, is
+enabled by this method; providing that the wrapped error types also implement
+the interfaces of the error they wrap. This may seem like a generally
+intractable problem, but in practice there are relatively few interface methods
+that are in common use, so =Timeout() bool= and =Temporary() bool= cover a large set
+of use cases.
+
+For package authors, if your package generates errors of a temporary nature,
+ensure you return error types that implement the respective interface
+methods. If you wrap error values on the way out, ensure that your wrappers
+respect the interface(s) that the underlying error value implemented.
+
+For package users, /if/ you need to inspect an error —​ and hopefully this should
+be infrequent — ​declare and assert an interface to assert the behaviour you
+expect, not the error’s type. Don’t ask package authors for public error types;
+instead ask that they make their types conform to common interfaces as
+appropriate.
+
+**** Too Many Behaviours
+What do we do when we have a function that can return errors that match a number
+of behaviours?
+
+For example:
+
+#+BEGIN_SRC go
+  // ProcessData instructs the BigStruct it receives to read data from
+  // a specific file, process the data, and then write the processed data
+  // to a separate file.
+  //
+  // On success, it returns the path to the file. Otherwise returns an error.
+  func ProcessData(r *reporting.TimeSheet) (string,error){
+    // do some things to get ready, assume some other code is in here.
+    // probably something that figures out what file to read from
+    // and what file to write to.
+
+    // readPath & writePath are strings
+    path, err := r.Process(readPath, writePath)
+    if err != nil {
+      // uh-oh! we can get a bunch of different errors from this,
+      switch x := err.(type) {
+        case reporting.ReadError:
+        // file doesn't exist, do something about that
+
+        case reporting.ProcessingError:
+        // file exists, but has bad data?
+
+        case reporting.WriteError:
+        // whoops, unable to write the output, definitely gotta deal with that
+
+        default:
+        // some other error that we probably don't want to handle?
+      }
+    }
+
+    // rest of function does it's thing
+    return writePath, nil
+  }
+#+END_SRC
+
+Oof. Type switching on an error is never a /great/ sign. Hopefully the code to
+handle each error case is it's own function or this switch statement will
+quickly become unreadable.
+
+So it's pretty clear here that replacing those sentinel errors from the
+=reporting= package with locally defined interfaces won't be all that much
+better. But we still need to handle these errors; the code calling =ProcessData=
+should only get an error if this function completely fails to handle these
+errors.
+
+And if possible, we'd like to remove 3 of our dependencies in the =reporting=
+package -- the three error types. It would be much nicer if all we relied on was
+=reporting.TimeSheet= ( or even better; an interface that describes what we need
+to be able to do ).
+
+How do we get that?
+
+Well, the first thing is to determine if we /can/ even improve this. If =reporting=
+is a third-party package we've imported, this is about as good as we can expect
+to do.
+
+What if we wrote the =reporting= package? What can we do then? Maybe we can
+refactor things to be cleaner and clearer?
+
+Let's give that a shot.
+
+First, let's take a look at the file where the =reporting.TimeSheet= type is
+defined:
+
+#+BEGIN_SRC go
+  package reporting
+
+  type TimeSheet struct {
+    // a whole bunch of unexported fields
+  }
+
+  // a bunch of functions that aren't relevant
+
+  func (ts *TimeSheet) Process(readPath, writePath string) (string,error) {
+    bits, err := os.ReadFile(readPath)
+    if err != nil {
+      return "", ReadError{err: err}
+    }
+
+    output, err = ts.bigProcessingFunction(bits)
+    if err != nil {
+      return "", ProcessingError{err: err}
+    }
+
+    // maybe do some other stuff with the output
+    // maybe do lots of stuff
+
+    err = os.WriteFile(writePath, output, 0o644)
+    if err != nil {
+      return "", WriteError{err: err}
+    }
+
+    return writePath, nil
+  }
+#+END_SRC
+
+Doesn't look too bad, right?
+
+Can you tell why this code should be refactored? Is this even the right code to
+refactor?
+
+What if it looked like this instead:
+
+#+BEGIN_SRC go
+      func (ts *TimeSheet) Process(input io.Reader) (io.Reader, error) {
+         output, err := ts.bigProcessingFunction(input)
+         if err != nil {
+           return nil, ProcessingError{err: err}
+         }
+
+         // do some other stuff with output
+         return bytes.NewBuffer(output), nil
+      }
+  ,#+END_SRC go
+
+  And our =ProcessData= method looked like this:
+
+  ,#+BEGIN_SRC go
+
+  func ProcessData(
+#+END_SRC
+
+
+*** Panicing: Don't
+Go’s =error= handling strategy is via the error interface and returning =error=
+values. Go does have =panic=, which is a by-product of the counterpart in the
+runtime’s internal =throw= function. There are few cases of using =recover= that I
+know of, and all of those are used to simulate non local transfer of control /not/
+exception handling. Using =recover= has all the problems of sensing errors by
+type, with the added complication that the set of types returned is unbounded.
+
+While it is true that any Go function can call =panic=, any Go procedure can fail
+due to out of memory, the program can be killed by a process manager, or the
+serve can simply fail. Always write your programs to assume failure, not
+success. Avoid =panic= and eschew =recover=, they’re not the tool you are looking
+for.
+
+For example, take an HTTP service with some middleware that can catch any panics
+thrown during the execution of a handler. This kind of middleware is important,
+and should be part of any service (regardless of the protocol) that accepts
+requests from end-users. However, the point of panic-catching middleware is not
+so that you've got an easy shortcut for returning an error status. Rather, /it's/
+/so that your service doesn't crash and die/.
+
+So how should you handle errors inside a handler? Use whatever methods within
+your HTTP framework to set the header status code and return an appropriate
+value. That could be a JSON object with an error message, it could be nothing. 
+
+Panicing as a way of returning an error to the user is like... something
+ridiculous, I can't think of a good analogy right now.
+
+**** Avoid Selfish Panics
+If a function or method returns an error value, there is no call for a
+=panic=. =panic= must be truly the last resort; exiting on impossible conditions, or
+in scenarios where the applications truly cannot recover. Panicing in a library
+must be the absolute last resort. Not only does it have direct impact on the
+reliability of the program your code is embedded into, but engenders a belief
+that your library is hard to work with, or itself unreliable.
+
+Panic will, during unwinding the stack, execute any deferred statements. However
+just as a panic in one goroutine cannot be recovered in another, a panic in one
+goroutine will not allow defer statements in other goroutines to exit. For a
+goroutine spawned by a library to panic the entire program is selfish and must
+be avoided.
+
+Additionally, even if you do =recover= you can still leak memory from
+goroutines. Goroutines that wait on a channel can fail to exit if the channel
+isn't closed or the 'stop' value isn't sent. As there is no way to clean up
+goroutines except by using a channel or something akin to =context.Context#Done()=
+to ask the goroutine to exit, using =panic= is a good way to leave goroutines
+hanging accidentally.
+
+**** Avoid =log.Fatal= & =log.Panic=
+I think this is the hottest take I've ever seen from a Go personality; from Dave Cheney:
+
+#+BEGIN_QUOTE
+The log package provides two ways to exit your program, log.Fatal and
+log.Panic. These are effectively the same as panic, and the same rules for panic
+should apply. They were a mistake and should not have been added. The
+convenience of being able to log and crash the program in one line, not two,
+created a misleading precedent.
+#+END_QUOTE
+
+He's not wrong; if we shouldn't be panicing we shouldn't be using either of
+these functions.
+
+*** Eliminate Error Handling By Eliminating Errors
+Some of the things in this section may go away depending on what happens with Go
+2.
+
+But do you know what is better than an improved syntax for handling errors? Not
+needing to handle errors at all. I’m not saying "remove your error
+handling". What I am suggesting is this: change your code so you do not have errors
+to handle.
+
+This section draws inspiration from John Ousterhout’s book, [[https://www.amazon.com/Philosophy-Software-Design-John-Ousterhout/dp/1732102201][A Philosophy of
+Software Design]]. One of the chapters in that book is called "Define Errors Out
+of Existence". We’re going to try to apply this advice to Go.
+
+**** Example 1: Counting Lines
+Let’s write a function to count the number of lines in a file.
+
+#+BEGIN_SRC go
+  func CountLines(r io.Reader) (int, error) {
+    var (
+      br    = bufio.NewReader(r)
+      lines int
+      err   error
+    )
+
+    for {
+      _, err = br.ReadString('\n')
+      lines++
+      if err != nil {
+        break
+      }
+    }
+
+    if err != io.EOF {
+      return 0, err
+    }
+    return lines, nil
+  }
+
+#+END_SRC
+
+Because we’re following our advice from previous sections, =CountLines= takes an
+=io.Reader=, not an =*os.File=; its the job of the caller to provide the =io.Reader=
+who’s contents we want to count.
+
+We construct a =bufio.Reader=, and then sit in a loop calling the =ReadString=
+method, incrementing a counter until we reach the end of the file, then we
+return the number of lines read.
+
+At least that’s the code we want to write, but instead this function is made
+more complicated by error handling. For example, there is this strange
+construction,
+
+#+BEGIN_SRC go
+		_, err = br.ReadString('\n')
+		lines++
+		if err != nil {
+			break
+		}
+#+END_SRC
+
+We increment the count of lines before checking the error—​that looks odd.
+
+The reason we have to write it this way is =ReadString= will return an error if it
+encounters and end-of-file before hitting a newline character. This can happen
+if there is no final newline in the file.
+
+To try to fix this, we rearrange the logic to increment the line count, then see
+if we need to exit the loop.
+
+But we’re not done checking errors yet. =ReadString= will return io.EOF when it
+hits the end of the file. This is expected, =ReadString= needs some way of saying
+stop, there is nothing more to read. So before we return the error to the caller
+of =CountLine=, we need to check if the error was not =io.EOF=, and in that case
+propagate it up, otherwise we return =nil= to say that everything worked fine.
+
+I think this is a good example of Russ Cox’s observation that error handling can
+obscure the operation of the function. Let’s look at an improved version.
+
+#+BEGIN_SRC go
+func CountLines(r io.Reader) (int, error) {
+	sc := bufio.NewScanner(r)
+	lines := 0
+
+	for sc.Scan() {
+		lines++
+	}
+	return lines, sc.Err()
+}
+#+END_SRC
+
+This improved version switches from using =bufio.Reader= to =bufio.Scanner=.
+
+Under the hood =bufio.Scanner= uses =bufio.Reader=, but it adds a nice layer of
+abstraction which helps remove the error handling with obscured the operation of
+=CountLines=. As a note: =bufio.Scanner= can scan for any pattern, but by default it
+looks for newlines.
+
+The method, =sc.Scan()= returns =true= if the scanner /has/ matched a line of text and
+has not encountered an error. So, the body of our =for= loop will be called only
+when there is a line of text in the scanner’s buffer. This means our revised
+=CountLines= correctly handles the case where there is no trailing newline, and
+also handles the case where the file was empty.
+
+Secondly, as =sc.Scan= returns false once an error is encountered, our for loop
+will exit when the end-of-file is reached or an error is encountered. The
+=bufio.Scanner= type memoises the first error it encountered and we can recover
+that error once we’ve exited the loop using the =sc.Err()= method.
+
+Lastly, =sc.Err()= takes care of handling =io.EOF= and will convert it to a nil if
+the end of file was reached without encountering another error.
+
+**** Example 2: WriteResponse
+This example was inspired by the [[https://go.dev/blog/errors-are-values][Errors are values]] blog post.
+
+Earlier in this presentation we went over examples dealing with opening, writing
+and closing files. The error handling is present, but not overwhelming as the
+operations can be encapsulated in helpers like =ioutil.ReadFile= and
+=ioutil.WriteFile=. However when dealing with low level network protocols it
+becomes necessary to build the response directly using I/O primitives the error
+handling can become repetitive. Consider this fragment of a HTTP server which is
+constructing the HTTP response.
+
+#+BEGIN_SRC go
+type Header struct {
+	Key, Value string
+}
+
+type Status struct {
+	Code   int
+	Reason string
+}
+
+func WriteResponse(w io.Writer, st Status, headers []Header, body io.Reader) error {
+	_, err := fmt.Fprintf(w, "HTTP/1.1 %d %s\r\n", st.Code, st.Reason)
+	if err != nil {
+		return err
+	}
+
+	for _, h := range headers {
+		_, err := fmt.Fprintf(w, "%s: %s\r\n", h.Key, h.Value)
+		if err != nil {
+			return err
+		}
+	}
+
+	if _, err := fmt.Fprint(w, "\r\n"); err != nil {
+		return err
+	}
+
+	_, err = io.Copy(w, body)
+	return err
+}
+#+END_SRC
+
+First we construct the status line using =fmt.Fprintf=, and check the error. Then
+for each header we write the header key and value, checking the error each
+time. Lastly we terminate the header section with an additional =\r\n=, check the
+error, and copy the response body to the client. Finally, although we don’t need
+to check the error from =io.Copy=, we need to translate it from the two return
+value form that =io.Copy= returns into the single return value that =WriteResponse=
+returns.
+
+That’s a lot of repetitive work. But we can make it easier on ourselves by
+introducing a small wrapper type, =errWriter=.
+
+=errWriter= fulfils the =io.Writer= contract so it can be used to wrap an existing
+=io.Writer=. =errWriter= passes writes through to its underlying writer until an
+error is detected. From that point on, it discards any writes and returns the
+previous error.
+
+#+BEGIN_SRC go
+type errWriter struct {
+	io.Writer
+	err error
+}
+
+func (e *errWriter) Write(buf []byte) (int, error) {
+	if e.err != nil {
+		return 0, e.err
+	}
+	var n int
+	n, e.err = e.Writer.Write(buf)
+	return n, nil
+}
+
+func WriteResponse(w io.Writer, st Status, headers []Header, body io.Reader) error {
+	ew := &errWriter{Writer: w}
+	fmt.Fprintf(ew, "HTTP/1.1 %d %s\r\n", st.Code, st.Reason)
+
+	for _, h := range headers {
+		fmt.Fprintf(ew, "%s: %s\r\n", h.Key, h.Value)
+	}
+
+	fmt.Fprint(ew, "\r\n")
+	io.Copy(ew, body)
+	return ew.err
+}
+#+END_SRC
+
+Applying =errWriter= to =WriteResponse= dramatically improves the clarity of the
+code. Each of the operations no longer needs to bracket itself with an error
+check. Reporting the error is moved to the end of the function by inspecting the
+=ew.err= field, avoiding the annoying translation from =io.Copy='s return values.
+
+*** Only Handle An Error Once
+Lastly, I want to mention that you should only handle errors once. Handling an
+error means inspecting the error value, and making a /single/ decision.
+
+#+BEGIN_SRC go
+// WriteAll writes the contents of buf to the supplied writer.
+func WriteAll(w io.Writer, buf []byte) {
+        w.Write(buf)
+}
+#+END_SRC
+
+If you make less than one decision, you’re ignoring the error. As we see here,
+the error from =w.WriteAll= is being discarded.
+
+But making /more than one/ decision in response to a single error is also
+problematic. The following is code that Dave Chaney comes across frequently.
+
+#+BEGIN_SRC go
+func WriteAll(w io.Writer, buf []byte) error {
+	_, err := w.Write(buf)
+	if err != nil {
+		log.Println("unable to write:", err) // annotated error goes to log file
+		return err                           // unannotated error returned to caller
+	}
+	return nil
+}
+#+END_SRC
+
+In this example if an error occurs during =w.Write=, a line will be written to a
+log file, noting the file and line that the error occurred, and the error is
+also returned to the caller, who possibly will log it, and return it, all the
+way back up to the top of the program.
+
+The caller is probably doing the same
+
+#+BEGIN_SRC go
+func WriteConfig(w io.Writer, conf *Config) error {
+	buf, err := json.Marshal(conf)
+	if err != nil {
+		log.Printf("could not marshal config: %v", err)
+		return err
+	}
+	if err := WriteAll(w, buf); err != nil {
+		log.Println("could not write config: %v", err)
+		return err
+	}
+	return nil
+}
+#+END_SRC
+
+So you get a stack of duplicate lines in your log file,
+
+#+BEGIN_SRC
+unable to write: io.EOF
+could not write config: io.EOF
+#+END_SRC
+
+but at the top of the program you get the original error without any context.
+
+#+BEGIN_SRC go
+err := WriteConfig(f, &conf)
+fmt.Println(err) // io.EOF
+#+END_SRC
+
+I want to dig into this a little further because I don’t see the problems with
+logging and returning as just a matter of personal preference.
+
+#+BEGIN_SRC go
+func WriteConfig(w io.Writer, conf *Config) error {
+	buf, err := json.Marshal(conf)
+	if err != nil {
+		log.Printf("could not marshal config: %v", err)
+		// oops, forgot to return
+	}
+	if err := WriteAll(w, buf); err != nil {
+		log.Println("could not write config: %v", err)
+		return err
+	}
+	return nil
+}
+#+END_SRC
+
+The problem I see a lot is programmers forgetting to return from an error. As we
+talked about earlier, Go style is to use guard clauses, checking preconditions
+as the function progresses and returning early.
+
+In this example the author checked the error, logged it, but forgot to
+return. This has caused a subtle bug.
+
+The contract for error handling in Go says that you cannot make any assumptions
+about the contents of other return values in the presence of an error. As the
+JSON marshalling failed, the contents of buf are unknown, maybe it contains
+nothing, but worse it could contain a half written JSON fragment.
+
+Because the programmer forgot to return after checking and logging the error,
+the corrupt buffer will be passed to =WriteAll=, which will probably succeed and
+so the config file will be written incorrectly. However the function will return
+just fine, and the only indication that a problem happened will be a single log
+line complaining about marshalling JSON, not a failure to write the config.
+
+*** Annotate Instead Of Handling When Possible
+This brings me to a Go proverb that I want to talk about; don’t just check
+errors, handle them gracefully. Can you suggest some problems with the following
+piece of code?
+
+#+BEGIN_SRC go
+func AuthenticateRequest(r *Request) error {
+        err := authenticate(r.User)
+        if err != nil {
+                return err
+        }
+        return nil
+}
+#+END_SRC
+
+An obvious suggestion is that the five lines of the function could be replaced with
+
+#+BEGIN_SRC
+return authenticate(r.User)
+#+END_SRC
+
+But this is the simple stuff that everyone should be catching in code
+review. More fundamentally the problem with this code is I cannot tell where the
+original error came from.
+
+If =authenticate= returns an error, then =AuthenticateRequest= will return the error
+to its caller, who will probably do the same, and so on. At the top of the
+program the main body of the program will print the error to the screen or a log
+file, and all that will be printed is: =No such file or directory=.
+
+There is no information of file and line where the error was generated. There is
+no stack trace of the call stack leading up to the error. The author of this
+code will be forced to a long session of bisecting their code to discover which
+code path trigged the file not found error.
+
+Donovan and Kernighan’s /The Go Programming Language/ recommends that you add
+context to the error path using =fmt.Errorf=:
+
+#+BEGIN_SRC go
+func AuthenticateRequest(r *Request) error {
+        err := authenticate(r.User)
+        if err != nil {
+                return fmt.Errorf("authenticate failed: %w", err)
+        }
+        return nil
+}
+#+END_SRC
+
+
+**** It's 202X, wrap your errors
+The =%w= formatting directive for =fmt.Errorf= is great, and you should be using
+it. However, there is such a thing as too much of a good thing.
+
+Take this for example:
+
+#+BEGIN_SRC go
+  func readconfig(file string) error {
+    if err := openfile(file); err != nil {
+      return fmt.Errorf("read config failed: %w", err)
+    }
+    // ...
+  }
+#+END_SRC
+
+If =openfile= failed it would likely annotate the error it returned with "open
+failed". Similarly, =readconfig='s wrapped error would be annotated with "read
+config failed".
+
+Errors with too much information are almost as bad as errors with no
+information. The more noise you have to sift through to figure out what actually
+went wrong the longer it'll take you to actually solve the problem.
+
+Unfortunately I don't have any great guidelines on how to best use
+wrapping... yet.
+
+For now try to only wrap an error when the error that is returned contains /no/
+/useful debugging information/. 
+ 

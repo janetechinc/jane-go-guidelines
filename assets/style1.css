@@ -1,0 +1,394 @@
+@import url("https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Roboto+Slab:400,700|Inconsolata:400,700");
+@import url("https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css");
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #edf0f2;
+  color: #404040;
+}
+
+body header#title-block-header {
+  background: #343131;
+  color: white;
+  padding: 2em;
+  position: relative;
+  z-index: 250;
+  width: 100%;
+}
+
+body header#title-block-header h1.title {
+  text-align: left;
+  margin-bottom: 0.2em;
+}
+
+body header#title-block-header p.subtitle {
+  display: inline-block;
+  text-align: left;
+  font-size: medium;
+  font-weight: bold;
+  margin-top: 0;
+}
+
+body nav#TOC {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 16em;
+  height: 100%;
+  background: #343131;
+  z-index: 200;
+  padding-top: 12em;
+}
+
+body nav#TOC ul {
+  margin-bottom: 0;
+}
+
+body nav#TOC li {
+  list-style: none;
+  margin-left: 0;
+}
+
+body nav#TOC li a {
+  padding: 0.4em 1.62em;
+  position: relative;
+  border: none;
+}
+
+body nav#TOC li > ul {
+  display: none;
+}
+
+body section.level1:first {
+  max-width: 1000px;
+  margin: auto 18em;
+  padding: 2em;
+}
+
+body section.level1 {
+  max-width: 1000px;
+  margin: auto 18em;
+  padding: 0 2em;
+}
+
+section#introductions.level1 {
+  margin-top: 2em;
+}
+
+a:hover,
+a:active {
+  outline: 0;
+}
+
+a:hover {
+  color: #3091d1;
+}
+
+a:visited {
+  color: #9b59b6;
+}
+
+ul {
+  line-heigth: 24px;
+  line-style-image: none;
+  margin: 0 0 24px 0;
+  padding: 0;
+}
+
+#content {
+  max-width: 1000px;
+  margin: auto;
+}
+.title {
+  text-align: center;
+  margin-bottom: 0.2em;
+}
+.subtitle {
+  text-align: center;
+  font-size: medium;
+  font-weight: bold;
+  margin-top: 0;
+}
+
+.todo {
+  font-family: monospace;
+  color: red;
+}
+.done {
+  font-family: monospace;
+  color: green;
+}
+.priority {
+  font-family: monospace;
+  color: orange;
+}
+.tag {
+  background-color: #eee;
+  font-family: monospace;
+  padding: 2px;
+  font-size: 80%;
+  font-weight: normal;
+}
+.timestamp {
+  color: #bebebe;
+}
+.timestamp-kwd {
+  color: #5f9ea0;
+}
+.org-right {
+  margin-left: auto;
+  margin-right: 0px;
+  text-align: right;
+}
+.org-left {
+  margin-left: 0px;
+  margin-right: auto;
+  text-align: left;
+}
+.org-center {
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+.underline {
+  text-decoration: underline;
+}
+#postamble p,
+#preamble p {
+  font-size: 90%;
+  margin: 0.2em;
+}
+p.verse {
+  margin-left: 3%;
+}
+
+pre.src {
+}
+
+code.verbatim,
+code {
+  font-weight: bolder;
+  background: #343131;
+  color: white;
+  padding: 4px;
+}
+
+div.NOTE pre,
+div.NOTE code,
+div.NOTE div.sourceCode,
+div.WARNING pre,
+div.WARNING code,
+div.WARNING div.sourceCode,
+div.DEFINITION pre,
+div.DEFINITION code,
+div.DEFINITION div.sourceCode,
+div.TIP pre,
+div.TIP code,
+div.TIP div.sourceCode {
+  padding: 1pt;
+  margin: 0;
+}
+
+pre,
+code,
+div.sourceCode {
+  border-radius: 3px;
+  background: #343131;
+  color: #b8bb26;
+  padding: 8pt;
+  font-family: monospace;
+  position: relative;
+  overflow: auto;
+  margin: 1.2em;
+}
+
+pre:before,
+code:before,
+div.sourceCode:before {
+  display: none;
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  padding: 3px;
+  color: #555;
+  background-color: #f2f2f299;
+}
+
+blockquote {
+  background-color: #f0f0f0;
+  border-left: 5px solid #cccccc;
+  font-style: italic;
+  line-height: 24px;
+  margin: 0px 0px 24px 0px;
+  padding: 30px;
+  padding-left: 25px;
+}
+
+blockquote > p {
+  padding: 0.2em 1em;
+}
+
+div.NOTE,
+div.WARNING,
+div.DEFINITION,
+div.TIP {
+  background-color: #f0f0f0;
+  border-left: 5px solid #cccccc;
+  font-style: italic;
+  line-height: 24px;
+  margin: 0px 0px 24px 0px;
+  padding: 6px 20px;
+}
+
+blockquote:before {
+  font-family: FontAwesome;
+  content: "";
+}
+
+blockquote:after {
+  font-family: FontAwesome;
+  content: "";
+  float: right;
+  position: relative;
+  top: -2em;
+}
+
+div.DEFINITION:before {
+  font-family: FontAwesome;
+  content: "Definition:";
+}
+
+div.NOTE:before {
+  font-family: FontAwesome;
+  content: "📒 Note";
+}
+
+div.WARNING:before {
+  font-family: FontAwesome;
+  content: "⚠ WARNING";
+}
+
+div.TIP:before {
+  font-family: FontAwesome;
+  content: "ℹ Tip";
+}
+
+blockquote {
+  background-color: #999;
+  color: black;
+}
+
+div.WARNING {
+  background-color: #ff252d;
+  color: white;
+}
+
+div.TIP {
+  background-color: #444;
+  color: white;
+}
+
+table {
+  border-collapse: collapse;
+}
+caption.t-above {
+  caption-side: top;
+}
+caption.t-bottom {
+  caption-side: bottom;
+}
+td,
+th {
+  vertical-align: top;
+}
+th.org-right {
+  text-align: center;
+}
+th.org-left {
+  text-align: center;
+}
+th.org-center {
+  text-align: center;
+}
+td.org-right {
+  text-align: right;
+}
+td.org-left {
+  text-align: left;
+}
+td.org-center {
+  text-align: center;
+}
+dt {
+  font-weight: bold;
+}
+.footpara {
+  display: inline;
+}
+.footdef {
+  margin-bottom: 1em;
+}
+.figure {
+  padding: 1em;
+}
+.figure p {
+  text-align: center;
+}
+.equation-container {
+  display: table;
+  text-align: center;
+  width: 100%;
+}
+.equation {
+  vertical-align: middle;
+}
+.equation-label {
+  display: table-cell;
+  text-align: right;
+  vertical-align: middle;
+}
+.inlinetask {
+  padding: 10px;
+  border: 2px solid gray;
+  margin: 10px;
+  background: #ffffcc;
+}
+#org-div-home-and-up {
+  text-align: right;
+  font-size: 70%;
+  white-space: nowrap;
+}
+textarea {
+  overflow-x: auto;
+}
+.linenr {
+  font-size: smaller;
+}
+.code-highlighted {
+  background-color: #ffff00;
+}
+.org-info-js_info-navigation {
+  border-style: none;
+}
+#org-info-js_console-label {
+  font-size: 10px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.org-info-js_search-highlight {
+  background-color: #ffff00;
+  color: #000000;
+  font-weight: bold;
+}
+.org-svg {
+  width: 90%;
+}
+
+p {
+  max-width: 800px;
+}
+li {
+  max-width: 800px;
+}
