@@ -4,7 +4,7 @@ guideline:
 		--css assets/style1.css --css assets/style2.css \
 		--css https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css \
 		-s base.org \
-		-o docs/guideline.html
+		-o docs/index.html
 
 example:
 	pandoc --html-q-tags --section-divs --toc --number-sections \
