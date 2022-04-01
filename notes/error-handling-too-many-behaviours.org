@@ -1,0 +1,325 @@
+**  Too Many Behaviours
+:PROPERTIES:
+:ID:       ed34c1e7-7924-49bf-88e4-75763a84ea90
+:END:
+What do we do when we have a function that can return errors that match a number
+of behaviours?
+
+For example:
+
+#+BEGIN_SRC go
+  // ProcessData instructs the time sheet it receives to read data from
+  // a specific file, process the data, and then write the processed data
+  // to a separate file.
+  //
+  // On success, it returns the path to the file. Otherwise returns an error.
+  func ProcessData(r *reporting.TimeSheet) (string,error){
+    // do some things to get ready, assume some other code is in here.
+
+    // readPath & writePath are strings
+    readPath := getReadFromPath()
+    writePath := getWriteToPath()
+
+    path, err := r.Process(readPath, writePath)
+    if err != nil {
+      // uh-oh! we can get a bunch of different errors from this,
+      // so use a type switch to handle them properly
+      switch x := err.(type) {
+        case reporting.ReadError:
+        // file doesn't exist, do something about that
+
+        case reporting.ProcessingError:
+        // file exists, but has bad data?
+
+        case reporting.WriteError:
+        // whoops, unable to write the output, definitely gotta deal with that
+
+        default:
+        // some other error that we probably don't want to handle?
+      }
+    }
+
+    // rest of function does it's thing
+    return writePath, nil
+  }
+#+END_SRC
+
+Oof. Type switching on an error is never a /great/ sign. Hopefully the code to
+handle each error case is it's own function or this switch statement will
+quickly become unreadable.
+
+So it's pretty clear here that replacing those sentinel errors from the
+=reporting= package with locally defined interfaces won't be all that much
+better. At least in the case where we have too many behaviours we need to check
+for.
+
+But we still need to handle these errors; the code calling =ProcessData= should
+only get an error if this function completely fails to do it's job.
+
+And if possible, we'd like to remove 3 of our dependencies in the =reporting=
+package -- the three error types. It would be much nicer if all we relied on was
+=reporting.TimeSheet= ( or even better; an interface that describes what we need
+to be able to do ).
+
+How do we get that?
+
+Well, the first thing is to determine if we /can/ even improve this. If =reporting=
+is a third-party package we've imported, this is about as good as we can expect
+to do.
+
+What if we wrote the =reporting= package? What can we do then? Maybe we can
+refactor things to be cleaner and clearer?
+
+Let's give that a shot.
+
+First, let's take a look at the file where the =reporting.TimeSheet= type is
+defined:
+
+#+BEGIN_SRC go
+  package reporting
+
+  type TimeSheet struct {
+    // a whole bunch of unexported fields
+  }
+
+  // a bunch of functions that aren't relevant
+
+  func (ts *TimeSheet) Process(readPath, writePath string) (string,error) {
+    bits, err := os.ReadFile(readPath)
+    if err != nil {
+      return "", ReadError{err: err}
+    }
+
+    output, err = ts.bigProcessingFunction(bits)
+    if err != nil {
+      return "", ProcessingError{err: err}
+    }
+
+    // maybe do some other stuff with the output
+    // maybe do lots of stuff
+
+    err = os.WriteFile(writePath, output, 0o644)
+    if err != nil {
+      return "", WriteError{err: err}
+    }
+
+    return writePath, nil
+  }
+#+END_SRC
+
+Doesn't look too bad, right?
+
+Can you tell why this code should be refactored? Is this even the right code to
+refactor?
+
+What if it looked like this instead:
+
+#+BEGIN_SRC go
+
+  func (ts *TimeSheet) Process(input io.Reader) (io.Reader, error) {
+    // bigProcessingFunction(input io.Reader) ([]byte, error)
+    output, err := ts.bigProcessingFunction(input)
+    if err != nil {
+      return nil, ProcessingError{err: err}
+    }
+
+    // do some other stuff with output here,
+    // if there's an error return ProcessingError{}
+
+    // now return a reader
+    return bytes.NewBuffer(output), nil
+  }
+#+END_SRC
+
+And our =ProcessData= method looked like this:
+
+#+BEGIN_SRC go
+  type processor interface {
+    Process(io.Reader) error
+  }
+  
+  func ProcessData(p processor) (string, error){
+    readFrom, err := getReportInput()
+    if err != nil {
+      return "", fmt.Errorf("unable to get report input: %w", err)
+    }
+
+    processed, err := p.Process(readFrom)
+    if err != nil {
+      return "", fmt.Errorf("unable to process report data: %w", err)
+    }
+
+    return handleOutput(processed)
+  }
+#+END_SRC
+
+Rather than having a =TimeSheet.Process= method that has to know how to:
+ - open a file
+   - and try do the right thing if that fails
+ - call a function that does the bulk of the processing
+ - do a little bit more processing to the data
+ - write the data to a file
+   - and try to do the right thing if /that/ fails
+
+Instead, we've now got a =TimeSheet.Process= method that does one thing:
+
+ - process the data, returning a =ProcessingError= if something goes wrong
+
+Now, it's our =ProcessData= that's responsible for preparing an =io.Reader= for
+=TimeSheet.Process= to read from. If something goes wrong trying to get that
+reader prepared, well, that's the job of =getReportInput= to deal with. Same for
+when trying to write the data out to a file -- =handleOutput= deals with that.
+
+This is also more useful code. Now a =reporting.TimeSheet= can use /anything/ that
+fulfills the =io.Reader= interface. Maybe you want to read that data over the
+network? Or from a gzipped file? Or a tarballed, gzipped file from over the
+network?
+
+#+BEGIN_SRC go
+  func ProcessDataFromURL(url string, p processor) (string, error){
+    resp, err := http.Get(url)
+    if err != nil {
+      return "", fmt.Errorf("unable to retrieve data from endpoint")
+    }
+
+    readFrom := zip.Decompressor(tar.NewReader(resp.Body))
+
+    processed, err := p.Process(readFrom)
+    if err != nil {
+      return "", fmt.Errorf("unable to process report data: %w", err)
+    }
+
+    return handleOutput(processed)
+  }
+#+END_SRC
+
+What if the data has to be written to a compressed file?
+
+#+BEGIN_SRC go
+  func handleTarballOutput(data io.Reader) (string, error) {
+    // returns *os.File
+    output, err := determineOutputFile()
+    if err != nil {
+      return "", err
+    }
+
+    w := zip.Compressor(tar.NewWriter(output))
+
+    // don't care how many bytes were written, ignore first return value
+    _, err := io.Copy(w, data)
+
+    return output.Name(), err
+  }
+
+  func ProcessDataFromURLWriteToTarball(url string, p processor) (string, error){
+    resp, err := http.Get(url)
+    if err != nil {
+      return "", fmt.Errorf("unable to retrieve data from endpoint")
+    }
+
+    readFrom := zip.Decompressor(tar.NewReader(resp.Body))
+
+    processed, err := p.Process(readFrom)
+    if err != nil {
+      return "", fmt.Errorf("unable to process report data: %w", err)
+    }
+
+    return handleTarballOutput(processed)
+  }
+#+END_SRC
+
+And /yes/, these are very simplified examples. However, they still show how using
+the SOLID principles can help us write code that doesn't depend on type
+switching or interrogating errors by type or behavior.
+
+But we can take this further, and make our code /even more useful/.
+
+#+BEGIN_SRC go
+  func ProcessDataIntoOutput(input io.Reader, output io.Writer, p processor) error {
+    processed, err := p.Process(input)
+    if err != nil {
+      return nil, fmt.Errorf("unable to process data: %w", err)
+    }
+
+    // is there something else that needs to happen here?
+
+    _, err = io.Copy(processed, output)
+    return fmt.Errorf("unable to copy processed data to output: %w", err)
+  }
+#+END_SRC
+
+This function only cares about one thing: taking the data returned from
+=TimeSheet.Process=, and copying that to the output. If it needs to do something
+to the data before writing it, it gets passed into a function and we get back a
+new =io.Reader=. This way, =ProcessDataIntoOutput= stays clear and easy to understand.
+
+Now all those other processing functions turn into these:
+
+#+BEGIN_SRC go
+  func ProcessDataFromURL(url string, output io.Writer, p processor) (error) {
+    resp, err := http.Get(url)
+    if err != nil {
+      return fmt.Errorf("unable to fetch data from '%v', reason: %w", url, err)
+    }
+
+    readFrom := zip.Decompressor(tar.NewReader(resp.Body))
+
+    return ProcessDataIntoOutput(readFrom, output, p)
+  }
+
+  func ProcessDataIntoFileFromURL(url, outputPath string, p processor) (error) {
+    of, err := os.OpenFile(outputPath , os.O_CREATE|os.O_TRUNC, 0o644)
+    if err != nil {
+      return fmt.Errorf("unable to open file: %w", err)
+    }
+
+    return ProcessDataFromURL(url, of, p)
+  }
+
+  func ProcessDataFromTarball(path string, output io.Writer, p processor) (error){
+    f, err := os.OpenFile(path, os.O_RDONLY, 0o644)
+    if err != nil {
+      return fmt.Errorf("unable to open file: %w", err)
+    }
+
+    readFrom := tar.NewReader(zip.Decompressor(f))
+
+    return ProcessDataIntoOutput(readFrom, output, p)
+  }
+#+END_SRC
+
+Now every time we want to read or write from anything we don't support -- so
+long as we can turn it into an =io.Reader= to read from or an =io.Writer= to write
+from, we're good!
+
+Also, we can now use these functions to handle other things. Maybe the =reporting=
+package has a =BudgetSheet= method that has the same =Process= method that =TimeSheet=
+does. Or maybe something over in the =accounting= package, or the =analytics=
+package. By flipping the dependencies so that =ProcessData= isn't trying to do a
+whole bunch, make it so that all =ProcessData= cares about is three behaviours.
+
+The arguments for the old =ProcessData= told you very little. All you could tell
+is that you passed in a time sheet and... something happened.
+
+Now, it's very clear. The name of the function tells us what it /does/ with the
+data -- it uses a =processor= to process data from an =io.Reader=, and writes the
+data into an =io.Writer=. 
+
+#+BEGIN_NOTE
+You might be wondering why the functions take =io.Writer= or =io.Reader= instead of
+=io.WriteCloser=, =io.ReadCloser=, or any of the other composite interfaces defined
+in the =io= package.
+
+Well that's because we're doing this the SOLID way. Each function should have
+one responsibility. Reading data, processing it, and writing it is small enough
+to be a single responsibility. But =ProcessData= shouldn't care about closing the
+reader or the writer.
+
+How does it know it's done?
+
+What if we want to process multiple sets of data, and store them as individual
+files inside a compressed archive. Using =io.Reader= and =io.Writer= means you can
+do that. As soon as =ProcessData= has to care about whether or not to close the
+file it's doing too much.
+#+END_NOTE
+

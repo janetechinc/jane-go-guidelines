@@ -1,0 +1,76 @@
+** Why /Do/ Some Packages Define Their Own Interfaces?
+There are, of course, some caveats.
+
+A good example is the =Reader= interface provided by the =io= package:
+
+#+BEGIN_SRC go
+type Reader interface {
+	Read(p []byte) (n int, err error)
+}
+#+END_SRC
+
+For those still new to Go: a =Reader= is an interface that allows users to pass in
+a slice of bytes that data will be read into (it's assumed you either don't care
+about what's currently in the slice or that it's empty). It returns how many
+bytes were written to the slice, as well as an error to signal an error -- or an
+=io.EOF= error to signal there's nothing more to read.
+
+I'm not going to dive into why this interface was designed this way, there are
+plenty of other articles that will do so. For example, [[https://dave.cheney.net/2019/09/05/dont-force-allocations-on-the-callers-of-your-api][why do you pass in a byte
+slice instead of =Read= returning one]]?
+
+Instead, let's talk about why the =io= package defines one *at all*.
+
+Well, let's think about all the places in the standard library that accept
+=io.Reader= as an argument.
+
+First off, there are [[https://cs.opensource.google/search?q=case:y%20func%5Cs%5BA-Z%5D.%2Bio.Reader%5B,)%5D%20&sq=&ss=go][at least 154 functions that accept an io.Reader]], across
+nearly as many packages.
+
+Let's take a look at one of those: [[https://pkg.go.dev/golang.org/x/image/webp][the image/webp package]]. This package defines
+just two functions: =Decode= and =DecodeConfig=. The first one attempts to convert
+the image into the =image.Image= struct used by all of the =image= sub-packages, the
+second one attempts to read information from the header and return color model &
+dimension information as a =image.Config=.
+
+So why =io.Reader= and not =webp.Reader= or =image.Reader=?
+
+Well, the immediately obvious answer is that =io.Reader= already exists, and code
+re-use is good, so bing bang boom we're using =io.Reader=.
+
+...Right?
+
+Well, there's more to it than that. What if the team behind the =image= package
+decided they made their own, slightly different interface:
+
+#+BEGIN_SRC go
+  // ImageReader reads `lim` bytes into `b`. Returns `image.End`
+  // if no more bytes can be read, nil if there is no error, and
+  // a non-nil, non-`image.End` for all other cases.
+  type ImageReader interface {
+    Read(b []byte, lim int) error
+  }
+#+END_SRC
+
+So what does this mean for code that wants to see how big a .webp is by using
+=DecodeConfig=? What if the image is being read over the network? What the image
+has been compressed? What if...?
+
+Think about how easy it is to compose all those cases because of how ubiquitous
+=io.Reader= is:
+
+#+BEGIN_SRC go
+  conf, err := webp.DecodeConfig(zip.Decompressor(req.Body))
+#+END_SRC
+
+Now, what if each of those had it's own unique reader? How do you transform a
+==http.Request#Body= into something =zip.Decompressor= can accept? How do you turn /that/
+into something =webp.DecodeConfig= can accept?
+
+By standardizing on the use of =io.Reader= as how bytes are read, it opens up
+thousands of ways to compose readers to accomplish what you're looking for.
+
+An alternative way to think about this is that many packages /might have had/
+their own interfaces that looked like or performed the same function as
+=io.Reader= -- and the Go team standardized on =io.Reader= as *the* interface defining
+how to read bytes, and put it in the =io= package.

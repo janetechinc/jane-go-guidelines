@@ -55,11 +55,15 @@ guidelines around writing Go code. If you choose to ignore these guidelines,
 expect your code to get stuck in review.
 
 #+INCLUDE: "arch/package-design.org"
-#+INCLUDE: "arch/api-design.org"
 #+INCLUDE: "arch/project-structure.org"
+#+INCLUDE: "arch/api-design.org"
 
-* Tips, Tricks, & Gotchas
-#+INCLUDE: "extras/tips.org"
+* Apendixes
+#+INCLUDE: "notes/error-handling-too-many-behaviours.org"
+#+INCLUDE: "notes/package-interfaces.org"
+#+INCLUDE: "notes/ioreader-is-great.org"
+#+INCLUDE: "notes/google-vs-amazon.org"
+#+INCLUDE: "notes/tips.org"
 
 * Sources
 Much of this document comes from articles, presentations, and blog posts from
@@ -82,8 +86,11 @@ Other sources:
  - [[https://github.com/golang/go/wiki/CodeReviewComments][Go Code Review Comments]] ( From the =golang/go= repo on GitHub )
  - [[https://go.dev/doc/effective_go][Effective Go]]
  - [[https://github.com/uber-go/guide/blob/master/style.md][Uber's Go Styleguide]]
+ - [[https://dave.cheney.net/2013/04/30/curious-channels][Curious Channels]], Dave Cheney
+ - [[https://www.calhoun.io/pitfalls-of-context-values-and-how-to-avoid-or-mitigate-them/][Pitfalls of context values and how to avoid or mitigate them in Go]], Jon Calhoun
+ - [[https://dave.cheney.net/2017/08/20/context-isnt-for-cancellation][Context isn't for cancellation]], Dave Cheney
    
-**  Other Reading
+**  Other Reading/Viewing
 This are articles or tutorials that aren't useful in defining a set of best
 practices, but are still worth reading.
 
@@ -96,6 +103,12 @@ practices, but are still worth reading.
    debugging a deadlock issue
  - [[https://eli.thegreenplace.net/2021/a-comprehensive-guide-to-go-generate/][A comprehensive guide to go generate]] - a deep dive into the =go generate=
    command, and how it can be used
+ - [[https://www.youtube.com/watch?v=oV9rvDllKEg][Concurrency is not Parallelism]], a great presentation from Rob Pike
+ - [[https://dave.cheney.net/2014/06/27/ice-cream-makers-and-data-races][Ice cream makers and data races]], blog post on data races in Go from Dave
+   Cheney
+   
+*** Mutexes
+ - [[https://www.programming-books.io/essential/go/mutex-gotchas-1c78058100ed4b45aab9461f69c05ecd][Mutex gotchas]]
 
 ** unorganized :noexport:
 

@@ -1,0 +1,135 @@
+** Why is =io.Reader= an example of great interface design?
+=io.Reader= is a great example of an interface, any design weirdness aside.
+
+So, why *is* =io.Reader= so great?
+
+Let's take a look at two functions that both do the same thing: read some bytes,
+looking for a specific set of bytes, and returning true as soon as that set of
+bytes is found.
+
+#+BEGIN_SRC go
+  var lookFor = []byte{0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64}
+
+  func FindInSlice(b []byte) bool {
+    // do the check!
+    return bytes.Contains(b, lookFor)
+  }
+
+  func FindInReader(r io.Reader) bool {
+    // create a buffer
+    buf := []byte{}
+    // cache this so we're not doing each loop iteration
+    l := len(lookFor)
+
+    // our temporary buffer
+    t := make([]byte, l*2)
+
+    for {
+      // read some bytes
+      n, err := r.Read(t)
+      if err == io.EOF {
+        buf = append(buf, t...)
+        break
+      }
+      if err != nil {
+        return false
+      }
+
+      buf = append(buf, t...)
+
+      if bytes.Contains(buf, lookFor) {
+        return true
+      }
+
+      if len(buf) > l+n {
+        buf = buf[l : l+n]
+      }
+    }
+
+    return bytes.Contains(buf, lookFor)
+  }
+#+END_SRC
+
+At first the one that takes =[]byte= is the clear winner, right? But think about
+how you can use both functions.
+
+For the first one, you have to prepare a slice of all the bytes you want to
+check before you can make the check. What if you're waiting on bytes from a huge
+file, or from a network connection?
+
+The second function that takes =io.Reader= is larger; that's not something anyone
+could argue and still be considered sane. However, it is a method that won't
+require many changes to get it to work with other byte sources. Also, it removes
+some of the responsibility from the caller to get everything in order. Many
+libraries return structs that fulfill the =io.Reader= interface; not having to use
+=io.ReadAll= first to get the byte slice is less code to write -- and more memory
+efficient.
+
+For example, many object storage libraries provide an =io.Reader= that lets you
+read chunks of bytes from an object. If you're reading bytes from an object
+store, there's a good chance you're paying for that operation ( even if it's
+only fractions of a penny ). In such cases, wouldn't you want to be able to
+return as soon as you've found the bytes you want, rather than having to read
+all of the bytes -- no matter how many or how long that takes -- using
+=io.ReadAll=?
+
+Additionally, the second function works with /anything/ that implements that
+interface. Want to use a =bytes.Buffer=? Go nuts. Got a file handle you want to
+read from? That works too! Maybe you've got an API client that provides a struct
+that fulfills =io.Reader= for reading data over the network -- just pass that
+struct into =FindInReader= and you're good to go! So while using the interface did
+require writing more code /at first/, by using an interface you've allowed the
+code to work with anything that fulfills the interface instead of having to
+write a new function for each thing you want to see if it contains 'hello world'.
+
+***** Another =io.ReadAll= Example
+If you still like =io.ReadAll=, think about what's involved in uploading an image.
+
+What's more memory efficient, =io.ReadAll=:
+
+#+BEGIN_SRC go
+  func handle(w http.ResponseWriter, r *http.Request){
+    defer r.Body.Close()
+
+    // Imagine there's code here that gets the output file ready,
+    // probably by creating a file handle pointing to an empty file in
+    // a temporary directory.
+
+    // ...how big is the image?
+    bits, err := io.ReadAll(r.Body)
+    if err != nil {
+      handleError(err)
+      return
+    }
+
+    err = writeToFile(bits, tmp)
+    if err != nil {
+      handleError(err)
+    }
+
+    // Maybe more stuff happens, sending the name of the file somewhere so it can
+    // get processed ( resizing an image, parsing text, whatever )
+  }
+#+END_SRC
+
+...or this:
+
+#+BEGIN_SRC go
+  func handle(w http.ResponseWriter, r *http.Request){
+    defer r.Body.Close()
+
+    // same prep code
+    err = writeToFile(tmp, r.Body)
+    if err != nil {
+      handleError(w, err)
+    }
+
+    // same post-writing code
+  }
+#+END_SRC
+
+Previously, =writeToFile= took the bytes and put them in a =bytes.Buffer=, and then
+used =io.Copy= to write that buffer to a file. Now it's just using =io.Copy=.
+
+Whatever is being uploaded spends very little time in memory. Instead, almost as
+quickly as we read a byte we're writing it.

@@ -1,3 +1,5 @@
+
+** Project Structure
 As you've probably noticed, Go doesn't have any kind of recommended folder
 structure -- and anyone who tells you otherwise is lying.
 
@@ -33,7 +35,7 @@ But going back to our guiding principles, which is simpler; =encoding/base64= or
 version, you could make an argument for =base64Encoding=. Maybe.
 
 Anyways, let's talk about some other things related to project structure.
-** =internal=, Not =pkg=
+*** =internal=, Not =pkg=
 As [[https://dave.cheney.net/2019/10/06/use-internal-packages-to-reduce-your-public-api-surface][Dave Cheney explains]], the =pkg= folder is a holdover from the early days of Go:
 
 #+BEGIN_QUOTE
@@ -110,7 +112,7 @@ One last thing on folder layout: every package, with the exception of =cmd/= and
 =internal/=, should contain some source code. That's not to say =internal= /can't/
 have any source code, just that it's one of the two folders it's not /required/.
 
-** Consider Fewer, Larger Packages
+*** Consider Fewer, Larger Packages
 Go does not provide elaborate ways of establishing visibility. Go lacks Java’s
 =public=, =protected=, =private=, and implicit =default= access modifiers. There is no
 equivalent of C++'s notion of a =friend= classes.
@@ -127,24 +129,25 @@ Given the limited controls available to control access to a package’s symbols,
 what practices should Go programmers follow to avoid creating over-complicated
 package hierarchies?
 
-The advice I find myself repeating is to prefer fewer, larger packages. Your
-default position should be to not create a new package. That will lead to too
-many types being made public creating a wide, shallow, API surface for your
-package.
+The advice we've found repeated often elsewhere online is this: prefer fewer,
+larger packages. Your default position should be to not create a new
+package. That will lead to too many types being made public creating a wide,
+shallow, API surface for your package.
 
-If you’re coming from a Java or C# background, consider this rule of thumb. - A
-Java package is equivalent to a single =.go= source file. - A Go package is
-equivalent to a whole Maven module or .NET assembly.
+If you’re coming from a Java or C# background, consider this rule of thumb.
+
+ - A Java package is equivalent to a single =.go= source file.
+ - A Go package is equivalent to a whole Maven module or .NET assembly.
 
 This is worth going into more detail, so that's exactly what we're going to do!
 
-*** Arrange code into files by import statements
+**** Arrange code into files by import statements
 If you’re arranging your packages by what they provide to callers, should you do
 the same for files within a Go package? How do you know when you should break up
 a .go file into multiple ones? How do you know when you’ve gone to far and
 should instead consolidate several .go files together?
 
-Here are the guidelines I use:
+Here are some basic guidelines:
 
  - Start each package with one =.go= file. Give that file the same name as the
    name of the folder. For example the source for =package http= should be placed
@@ -169,7 +172,7 @@ package the compiler compiles each function (methods are just fancy functions in
 Go) in parallel. Changing the layout of your code within a package should not
 affect compilation time.
 
-*** Keep =package main= as small as possible
+**** Keep =package main= as small as possible
 Your =main= function, and =main= package should do as little as possible. This is
 because =main.main= acts as a singleton; there can only be one main function in a
 program.
@@ -186,7 +189,7 @@ function and ideally out of your main package. =func main()= should parse flags,
 open connections to databases, loggers, and such, then hand off execution to a
 high level object.
 
-*** Prefer internal tests to external tests
+**** Prefer internal tests to external tests
 The =go= tool supports writing your testing package tests in two places. Assuming
 your package is called =http2=, you can write a =http2_test.go= file and use the
 =package http2= declaration. Doing so will compile the code in =http2_test.go= as if
@@ -200,10 +203,11 @@ your package’s code, they live in their own package. This allows you to write
 your tests as if you were another package calling into your code. This is known
 as an external test.
 
-I recommend using internal tests when writing unit tests for your package. This
+We recommend using internal tests when writing unit tests for your package. This
 allows you to test each function or method directly, avoiding the bureaucracy of
 external testing.
 
 However, you should place your =Example= test functions in an external test
 file. This ensures that when viewed in godoc, the examples have the appropriate
 package prefix and can be easily copy pasted. 
+

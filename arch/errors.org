@@ -460,134 +460,8 @@ expect, not the error’s type. Don’t ask package authors for public error typ
 instead ask that they make their types conform to common interfaces as
 appropriate.
 
-**** Too Many Behaviours
-What do we do when we have a function that can return errors that match a number
-of behaviours?
-
-For example:
-
-#+BEGIN_SRC go
-  // ProcessData instructs the BigStruct it receives to read data from
-  // a specific file, process the data, and then write the processed data
-  // to a separate file.
-  //
-  // On success, it returns the path to the file. Otherwise returns an error.
-  func ProcessData(r *reporting.TimeSheet) (string,error){
-    // do some things to get ready, assume some other code is in here.
-    // probably something that figures out what file to read from
-    // and what file to write to.
-
-    // readPath & writePath are strings
-    path, err := r.Process(readPath, writePath)
-    if err != nil {
-      // uh-oh! we can get a bunch of different errors from this,
-      switch x := err.(type) {
-        case reporting.ReadError:
-        // file doesn't exist, do something about that
-
-        case reporting.ProcessingError:
-        // file exists, but has bad data?
-
-        case reporting.WriteError:
-        // whoops, unable to write the output, definitely gotta deal with that
-
-        default:
-        // some other error that we probably don't want to handle?
-      }
-    }
-
-    // rest of function does it's thing
-    return writePath, nil
-  }
-#+END_SRC
-
-Oof. Type switching on an error is never a /great/ sign. Hopefully the code to
-handle each error case is it's own function or this switch statement will
-quickly become unreadable.
-
-So it's pretty clear here that replacing those sentinel errors from the
-=reporting= package with locally defined interfaces won't be all that much
-better. But we still need to handle these errors; the code calling =ProcessData=
-should only get an error if this function completely fails to handle these
-errors.
-
-And if possible, we'd like to remove 3 of our dependencies in the =reporting=
-package -- the three error types. It would be much nicer if all we relied on was
-=reporting.TimeSheet= ( or even better; an interface that describes what we need
-to be able to do ).
-
-How do we get that?
-
-Well, the first thing is to determine if we /can/ even improve this. If =reporting=
-is a third-party package we've imported, this is about as good as we can expect
-to do.
-
-What if we wrote the =reporting= package? What can we do then? Maybe we can
-refactor things to be cleaner and clearer?
-
-Let's give that a shot.
-
-First, let's take a look at the file where the =reporting.TimeSheet= type is
-defined:
-
-#+BEGIN_SRC go
-  package reporting
-
-  type TimeSheet struct {
-    // a whole bunch of unexported fields
-  }
-
-  // a bunch of functions that aren't relevant
-
-  func (ts *TimeSheet) Process(readPath, writePath string) (string,error) {
-    bits, err := os.ReadFile(readPath)
-    if err != nil {
-      return "", ReadError{err: err}
-    }
-
-    output, err = ts.bigProcessingFunction(bits)
-    if err != nil {
-      return "", ProcessingError{err: err}
-    }
-
-    // maybe do some other stuff with the output
-    // maybe do lots of stuff
-
-    err = os.WriteFile(writePath, output, 0o644)
-    if err != nil {
-      return "", WriteError{err: err}
-    }
-
-    return writePath, nil
-  }
-#+END_SRC
-
-Doesn't look too bad, right?
-
-Can you tell why this code should be refactored? Is this even the right code to
-refactor?
-
-What if it looked like this instead:
-
-#+BEGIN_SRC go
-      func (ts *TimeSheet) Process(input io.Reader) (io.Reader, error) {
-         output, err := ts.bigProcessingFunction(input)
-         if err != nil {
-           return nil, ProcessingError{err: err}
-         }
-
-         // do some other stuff with output
-         return bytes.NewBuffer(output), nil
-      }
-  ,#+END_SRC go
-
-  And our =ProcessData= method looked like this:
-
-  ,#+BEGIN_SRC go
-
-  func ProcessData(
-#+END_SRC
-
+A more thorough example of how this can be achieved ( or straight up
+side-stepped ) can be found in the appendixes: "Too Many Behaviours".
 
 *** Panicing: Don't
 Go’s =error= handling strategy is via the error interface and returning =error=
@@ -639,7 +513,9 @@ to ask the goroutine to exit, using =panic= is a good way to leave goroutines
 hanging accidentally.
 
 **** Avoid =log.Fatal= & =log.Panic=
-I think this is the hottest take I've ever seen from a Go personality; from Dave Cheney:
+This is possibly the hottest take ever seen from a Go personality.
+
+From Dave Cheney:
 
 #+BEGIN_QUOTE
 The log package provides two ways to exit your program, log.Fatal and
@@ -652,14 +528,26 @@ created a misleading precedent.
 He's not wrong; if we shouldn't be panicing we shouldn't be using either of
 these functions.
 
+**** Panic Middleware Is Not There To Handle "You Forgot A Parameter"
+Panic middleware exists for one reason: to keep your server up and running.
+
+The only reason to have panic middleware is to ensure that a runtime error such
+as a nil de-reference or some other kind of runtime error doesn't cause your
+application to crash.
+
+Therefore: don't use the panic middleware to avoid writing error handling code.
+
 *** Eliminate Error Handling By Eliminating Errors
-Some of the things in this section may go away depending on what happens with Go
-2.
+Some of the things in this section may go away depending on what happens with
+Go 2.
 
 But do you know what is better than an improved syntax for handling errors? Not
-needing to handle errors at all. I’m not saying "remove your error
-handling". What I am suggesting is this: change your code so you do not have errors
-to handle.
+needing to handle errors at all.
+
+We're not saying "remove your error handling".
+
+What we are suggesting is this: change your code so you do not have errors to
+handle.
 
 This section draws inspiration from John Ousterhout’s book, [[https://www.amazon.com/Philosophy-Software-Design-John-Ousterhout/dp/1732102201][A Philosophy of
 Software Design]]. One of the chapters in that book is called "Define Errors Out
@@ -712,7 +600,7 @@ construction,
 		}
 #+END_SRC
 
-We increment the count of lines before checking the error—​that looks odd.
+We increment the count of lines before checking the error —​ that looks odd.
 
 The reason we have to write it this way is =ReadString= will return an error if it
 encounters and end-of-file before hitting a newline character. This can happen
@@ -727,8 +615,8 @@ stop, there is nothing more to read. So before we return the error to the caller
 of =CountLine=, we need to check if the error was not =io.EOF=, and in that case
 propagate it up, otherwise we return =nil= to say that everything worked fine.
 
-I think this is a good example of Russ Cox’s observation that error handling can
-obscure the operation of the function. Let’s look at an improved version.
+This is a good example of Russ Cox’s observation that error handling can obscure
+the operation of the function. Let’s look at an improved version.
 
 #+BEGIN_SRC go
 func CountLines(r io.Reader) (int, error) {
@@ -766,13 +654,13 @@ the end of file was reached without encountering another error.
 **** Example 2: WriteResponse
 This example was inspired by the [[https://go.dev/blog/errors-are-values][Errors are values]] blog post.
 
-Earlier in this presentation we went over examples dealing with opening, writing
-and closing files. The error handling is present, but not overwhelming as the
-operations can be encapsulated in helpers like =ioutil.ReadFile= and
-=ioutil.WriteFile=. However when dealing with low level network protocols it
-becomes necessary to build the response directly using I/O primitives the error
-handling can become repetitive. Consider this fragment of a HTTP server which is
-constructing the HTTP response.
+Earlier in this (absolutely massive) document we went over examples dealing with
+opening, writing, and closing files. The error handling is present, but not
+overwhelming as the operations can be encapsulated in helpers like
+=ioutil.ReadFile= and =ioutil.WriteFile=. However when dealing with low level
+network protocols it becomes necessary to build the response directly using I/O
+primitives the error handling can become repetitive. Consider this fragment of a
+HTTP server which is constructing the HTTP response.
 
 #+BEGIN_SRC go
 type Header struct {
@@ -857,7 +745,10 @@ check. Reporting the error is moved to the end of the function by inspecting the
 =ew.err= field, avoiding the annoying translation from =io.Copy='s return values.
 
 *** Only Handle An Error Once
-Lastly, I want to mention that you should only handle errors once. Handling an
+:PROPERTIES:
+:ID:       0372bf73-a8e4-4eb4-823f-0dcf1564163b
+:END:
+Lastly, we want to mention that you should only handle errors once. Handling an
 error means inspecting the error value, and making a /single/ decision.
 
 #+BEGIN_SRC go
@@ -871,7 +762,7 @@ If you make less than one decision, you’re ignoring the error. As we see here,
 the error from =w.WriteAll= is being discarded.
 
 But making /more than one/ decision in response to a single error is also
-problematic. The following is code that Dave Chaney comes across frequently.
+problematic. The following is code you will probably see frequently:
 
 #+BEGIN_SRC go
 func WriteAll(w io.Writer, buf []byte) error {
@@ -913,14 +804,14 @@ unable to write: io.EOF
 could not write config: io.EOF
 #+END_SRC
 
-but at the top of the program you get the original error without any context.
+...but at the top of the program you get the original error without any context.
 
 #+BEGIN_SRC go
 err := WriteConfig(f, &conf)
 fmt.Println(err) // io.EOF
 #+END_SRC
 
-I want to dig into this a little further because I don’t see the problems with
+We want to dig into this a little further because we don’t see the problems with
 logging and returning as just a matter of personal preference.
 
 #+BEGIN_SRC go
@@ -938,7 +829,7 @@ func WriteConfig(w io.Writer, conf *Config) error {
 }
 #+END_SRC
 
-The problem I see a lot is programmers forgetting to return from an error. As we
+The problem seen often is programmers forgetting to return from an error. As we
 talked about earlier, Go style is to use guard clauses, checking preconditions
 as the function progresses and returning early.
 
@@ -957,9 +848,13 @@ just fine, and the only indication that a problem happened will be a single log
 line complaining about marshalling JSON, not a failure to write the config.
 
 *** Annotate Instead Of Handling When Possible
-This brings me to a Go proverb that I want to talk about; don’t just check
-errors, handle them gracefully. Can you suggest some problems with the following
-piece of code?
+This brings us to a Go proverb that should talk about:
+
+#+BEGIN_QUOTE
+Don’t just check errors, handle them gracefully.
+#+END_QUOTE
+
+Can you suggest some problems with the following piece of code?
 
 #+BEGIN_SRC go
 func AuthenticateRequest(r *Request) error {
@@ -973,12 +868,12 @@ func AuthenticateRequest(r *Request) error {
 
 An obvious suggestion is that the five lines of the function could be replaced with
 
-#+BEGIN_SRC
+#+BEGIN_SRC go
 return authenticate(r.User)
 #+END_SRC
 
 But this is the simple stuff that everyone should be catching in code
-review. More fundamentally the problem with this code is I cannot tell where the
+review. More fundamentally the problem with this code is you cannot tell where the
 original error came from.
 
 If =authenticate= returns an error, then =AuthenticateRequest= will return the error
@@ -1004,8 +899,6 @@ func AuthenticateRequest(r *Request) error {
 }
 #+END_SRC
 
-
-**** It's 202X, wrap your errors
 The =%w= formatting directive for =fmt.Errorf= is great, and you should be using
 it. However, there is such a thing as too much of a good thing.
 
@@ -1028,9 +921,49 @@ Errors with too much information are almost as bad as errors with no
 information. The more noise you have to sift through to figure out what actually
 went wrong the longer it'll take you to actually solve the problem.
 
-Unfortunately I don't have any great guidelines on how to best use
-wrapping... yet.
+So how do we determine when we should wrap?
 
-For now try to only wrap an error when the error that is returned contains /no/
-/useful debugging information/. 
- 
+**** When The Error Is From Outside The Code Base
+When calling a 3rd-party API ( HTTP, GRPC, or a library ), we don't have any
+control of what's in an error.
+
+So, to ensure the error can be traced back to a specific location, annotate
+errors from 3rd-party APIs.
+
+**** When The Site Of The Error Contains Useful Information
+This is for when an error occurs inside a function after you've done some
+processing. Maybe you've called a method that told you where to save a file, but
+when you try to open that file for writing you get an error.
+
+Annotate that error with the full path to the file you're trying to open.
+
+Useful information here means things you only have at the moment the error is
+encountered.
+
+For example, there are error packages that have a =New(string)= function that
+returns a string error -- that has been annotated with the stack trace of where
+the error was created. That's useful!
+
+Appending the name of the function where the error was found is not, that leads
+to:
+
+#+BEGIN_SRC
+main: foo: bar: baz: thing: other thing: helper: api: last call: unable to open file
+#+END_SRC
+
+Wouldn't this be nicer:
+
+#+BEGIN_SRC
+user registration: foo-bar api call: unable to open file
+#+END_SRC
+
+Doesn't that help point you to where the error actually is?
+
+**** That's It!
+Errors need to be useful, so we want to add context to them.
+
+Errors need to be readable to be useful, so we don't want to add /too much/
+context to them.
+
+So, err (pun intended) on the side of less annotation as much as possible.
+

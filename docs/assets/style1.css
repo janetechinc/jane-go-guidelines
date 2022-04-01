@@ -35,11 +35,12 @@ body nav#TOC {
   position: fixed;
   top: 0;
   left: 0;
-  width: 16em;
+  width: 22em;
   height: 100%;
   background: #343131;
   z-index: 200;
   padding-top: 12em;
+  overflow-y: scroll;
 }
 
 body nav#TOC ul {
@@ -57,19 +58,24 @@ body nav#TOC li a {
   border: none;
 }
 
-body nav#TOC li > ul {
-  display: none;
+/* body nav#TOC li > ul { */
+/*     display: none; */
+/* } */
+
+body nav#TOC ul > li > ul {
+  font-size: 0.8em;
+  margin-left: 1em;
 }
 
 body section.level1:first {
   max-width: 1000px;
-  margin: auto 18em;
+  margin: auto 18em auto 22em;
   padding: 2em;
 }
 
 body section.level1 {
   max-width: 1000px;
-  margin: auto 18em;
+  margin: auto 12em auto 22em;
   padding: 0 2em;
 }
 
@@ -175,22 +181,6 @@ code {
   padding: 4px;
 }
 
-div.NOTE pre,
-div.NOTE code,
-div.NOTE div.sourceCode,
-div.WARNING pre,
-div.WARNING code,
-div.WARNING div.sourceCode,
-div.DEFINITION pre,
-div.DEFINITION code,
-div.DEFINITION div.sourceCode,
-div.TIP pre,
-div.TIP code,
-div.TIP div.sourceCode {
-  padding: 1pt;
-  margin: 0;
-}
-
 pre,
 code,
 div.sourceCode {
@@ -230,6 +220,23 @@ blockquote > p {
   padding: 0.2em 1em;
 }
 
+div.NOTE pre,
+div.NOTE code,
+div.NOTE div.sourceCode,
+div.WARNING pre,
+div.WARNING code,
+div.WARNING div.sourceCode,
+div.DEFINITION pre,
+div.DEFINITION code,
+div.DEFINITION div.sourceCode,
+div.TIP pre,
+div.TIP code,
+div.TIP div.sourceCode {
+  padding: 1pt;
+  margin: 0;
+}
+
+div.HIGHLIGHT,
 div.NOTE,
 div.WARNING,
 div.DEFINITION,
@@ -288,6 +295,13 @@ div.WARNING {
 div.TIP {
   background-color: #444;
   color: white;
+}
+
+div.HIGHLIGHT {
+  background-color: #fdf6e3;
+  display: inline-block;
+  border-left: none;
+  font-style: normal;
 }
 
 table {

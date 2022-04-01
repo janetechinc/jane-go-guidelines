@@ -1,9 +1,11 @@
+** Concurrency
 Often Go is chosen for a project because of its concurrency features. The Go
 team have gone to great lengths to make concurrency in Go cheap (in terms of
 hardware resources) and performant, however it is possible to use Go’s
-concurrency features to write code which is neither performant or reliable. With
-the time I have left I want to leave you with some advice for avoid some of the
-pitfalls that come with Go’s concurrency features.
+concurrency features to write code which is neither performant or reliable.
+
+In this section, we'll go over some advice for avoiding some of the pitfalls
+that come with Go’s concurrency features.
 
 Go features first class support for concurrency with channels, and the =select=
 and =go= statements. If you’ve learnt Go formally from a book or training course,
@@ -17,17 +19,14 @@ concurrency model. As a product, our language almost sells itself on this
 feature alone. On the other hand, there is a narrative that concurrency isn’t
 actually that easy to use, otherwise authors wouldn’t make it the last chapter
 in their book.
-** Stuff To Crib From :noexport:
-https://go.dev/blog/waza-talk
-https://dave.cheney.net/2013/04/30/curious-channels
 
-** Channel Axioms
+*** Channel Axioms
 Go programmers quickly grasp the idea of a channel as a queue of values and are
 comfortable with the notion that channel operations may block when full or
 empty. In this section I want to explore several of the less common properties
 of channels.
 
-*** A send to a nil channel blocks forever
+**** A send to a nil channel blocks forever
 It can be surprising to newcomers that is a send on a nil channel blocks forever.
 
 #+BEGIN_SRC go
@@ -41,7 +40,7 @@ This example program will deadlock on line 5 because the zero value for an
 uninitialised channel is nil. You cannot send to a channel that has not been
 initialised.
 
-*** A receive from a nil channel blocks forever
+**** A receive from a nil channel blocks forever
 Similarly receiving from a nil channel blocks the receiver forever.
 
 #+BEGIN_SRC go
@@ -62,7 +61,7 @@ So why does this happen? Here is one possible explanation:
  - If the channel is nil then the sender and receiver have no reference to each
    other; they are both blocked waiting on independent channels and will never
    unblock.
-*** A send to a closed channel panics
+**** A send to a closed channel panics
 The following program will likely panic as the first goroutine to reach 10 will
 close the channel before its siblings have time to finish sending their values.
 
@@ -140,7 +139,7 @@ func main() {
 }
 #+END_SRC
 
-***  A receive from a closed channel returns the zero value immediately
+****  A receive from a closed channel returns the zero value immediately
 The final case is the inverse of the previous. Once a channel is closed /and/ all
 values drained from its buffer, the channel will always return zero values
 immediately.
@@ -178,7 +177,7 @@ for v, ok := <- c; ok ; v, ok = <- c {
 These two statements are equivalent in function, and demonstrate what for range
 is doing under the hood.
 
-*** Prefer channels with a size of zero or one
+**** Prefer channels with a size of zero or one
 When dealing with an unknown producer or consumer choose a buffer size of zero
 or one.
 
@@ -192,7 +191,7 @@ on that result.
 
 The most reasonable channels sizes are usually zero and one. Most other sizes
 are /guesses/. When you guess incorrectly, the program is unreliable.
-*** Keep yourself busy or do the work yourself
+**** Keep yourself busy or do the work yourself
 What is the problem with this program?
 
 #+BEGIN_SRC go
@@ -256,8 +255,8 @@ func main() {
 }
 #+END_SRC
 
-This might look silly, but it’s a common common solution I see in the wild. It’s
-symptomatic of not understanding the underlying problem.
+This might look silly, but it’s a common solution you'll probably see in the
+wild. It’s symptomatic of not understanding the underlying problem.
 
 Now, if you’re a little more experienced with go, you might instead write
 something like this.
@@ -327,7 +326,7 @@ to plumb a result back from a goroutine to its initiator.
 Many Go programmers overuse goroutines, especially when they are starting
 out. As with all things in life, moderation is the key to success.
 
-** Leave Concurrency To The Caller
+*** Leave Concurrency To The Caller
 What is the difference between these two APIs?
 
 #+BEGIN_SRC go
@@ -390,9 +389,9 @@ If your function starts a goroutine you must provide the caller with a way to
 explicitly stop that goroutine. It is often easier to leave decision to execute
 a function asynchronously to the caller of that function.
 
-** Never Start A Goroutine Without Knowing When It Will Stop
-Perhaps fitting for the final topic in this presentation, we’re going to talk
-about stopping.
+*** Never Start A Goroutine Without Knowing When It Will Stop
+Perhaps fitting for the final topic in this section, we’re going to talk about
+stopping.
 
 A previous example showed using a goroutine when one wasn’t really
 necessary. But one of the driving reasons for using Go is the first class
@@ -618,7 +617,4 @@ which causes all the goroutines waiting on that channel to shut down their
 =http.Server=. This in turn will cause all the remaining =ListenAndServe= goroutines
 to return. Once all the goroutines we started have stopped, =main.main= returns
 and the process stops cleanly.
-** Pitfalls :noexport:
-*** Data Races
-https://dave.cheney.net/2014/06/27/ice-cream-makers-and-data-races
  

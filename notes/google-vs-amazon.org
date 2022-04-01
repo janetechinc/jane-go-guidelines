@@ -1,0 +1,127 @@
+** API Design, Google vs Amazon
+
+A good way to show everything we've been talking about is to take a look at
+something where having =io.Reader= and =io.Writer= is very handy.
+
+Object storage APIs. Think AWS S3, or Google Storage. These are things with
+'buckets' and 'objects' -- no files or directories.
+
+Let's take a look at how you upload some data to object storage for Amazon's S3
+using their Go SDK:
+
+#+BEGIN_SRC go
+  // The session the S3 Uploader will use
+  sess := session.Must(session.NewSession())
+
+  // Create an uploader with the session and default options
+  uploader := s3manager.NewUploader(sess)
+
+  f, err  := os.Open(filename)
+  if err != nil {
+      fmt.Printf("failed to open file %q, %w", filename, err)
+  }
+
+  // Upload the file to S3.
+  result, err := uploader.Upload(&s3manager.UploadInput{
+      Bucket: aws.String(myBucket),
+      Key:    aws.String(myString),
+      Body:   f,
+  })
+  if err != nil {
+    return err
+  }
+  return nil
+#+END_SRC
+
+Now Google:
+
+#+BEGIN_SRC go
+  ctx := context.Background()
+
+  client, err := storage.NewClient(ctx)
+  if err != nil {
+    return err
+  }
+
+  writer := client.Bucket(bucketName).Object(objectFullName).NewWriter(ctx)
+
+  f, err := os.OpenFile(name , os.O_RDONLY, 0o644)
+  if err != nil {
+    return err
+  }
+
+  _, err = io.Copy(f, writer)
+  if err != nil {
+    return err
+  }
+
+  err = writer.Close()
+  if err != nil {
+    return err
+  }
+#+END_SRC
+
+One thing to note really quickly: the type of =Body= in =s3manager.UploadInput= is
+=io.Reader=.
+
+So Amazon has you pass in an =io.Reader=, Google gives you an =io.Writer=.
+
+What change does this have on how you use these packages?
+
+Well, for one: if you want to upload bytes from multiple places to S3, you have
+to have all those bytes ready beforehand. You also have to do the whole upload
+all at once.
+
+So one thing you can't do with the S3 version is build a zip file made of
+multiple files from a multi-part POST without reading in all those bytes and
+arranging everything.
+
+With Google's API, you could pass that writer around. Hey, remember our
+=ProcessDataIntoOutput= function from earlier? This one:
+
+#+BEGIN_SRC go
+  func ProcessDataIntoOutput(input io.Reader, output io.Writer, p processor) error {
+    processed, err := p.Process(input)
+    if err != nil {
+      return nil, fmt.Errorf("unable to process data: %w", err)
+    }
+
+    // is there something else that needs to happen here?
+
+    _, err = io.Copy(processed, output)
+    return fmt.Errorf("unable to copy processed data to output: %w", err)
+  }
+#+END_SRC
+
+Hey, isn't that neat -- without any changes to our code, we can write to reports
+into Google Storage.
+
+This isn't meant to be mean or anything; I'm not saying the developers who built
+the S3 portion of the Amazon Go SDK are stupid, or bad developers.
+
+What this section is /trying/ to get across is the idea that everything we've been
+talking about is connected. How we design our APIs matters.
+
+By designing the Amazon S3 API around the concept of "uploading files", the
+developers made some potentially very useful cases harder to achieve without
+having to add much more code. This is an API that reads like it kind of doesn't
+trust developers to Do The Right Thing™. 
+
+On the other hand, by designing the Google Storage API around the idea of
+"writing bytes", Google has put all the power of =io.Writer= in your hands. Rather
+than having to do a lot of work that locks you into using the library a specific
+way, /you/ get to choose how to use it.
+
+Additionally, by trying to ensure that how you /use/ the package is simple, it's
+allowed Google to make the /implementation/ of the package simpler. Take a look at
+[[https://github.com/googleapis/google-cloud-go/blob/storage/v1.21.0/storage/writer.go#L235][the implementation of Write]] in the Google Storage package.
+
+Now take a look at the implementation of [[https://github.com/aws/aws-sdk-go/blob/v1.43.29/service/s3/s3manager/upload.go#L274][Upload]] for S3. Whoops, sorry,
+[[https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L296][UploadWithContext]]. Oh, wait, no, have to go deeper into [[https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L376][uploader.upload]]. Still a
+bit further to go, though, [[https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L576][multiuploader.upload]] is what we want.
+
+It's fair to say that Amazon has different goals. Obviously that's the case;
+Amazon has a [[https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L26][minimum size on what can be uploaded to S3]], Google doesn't. But
+that's not to say that Google doesn't have some similar logic to Amazon for some
+cases. But if they do, they've put that logic where it belongs; in their
+service.

@@ -1,2 +1,397 @@
+** Logging
+
+Logging is important. It can provide critical context clues when trying to
+understand why an application isn't working properly.
+
+At the same time, they should be the last place we look when debugging
+something. Scrolling through logs trying to understand what happened is never
+fun, and often you don't find what you need anyways.
+
+How do we make logs good?
+
 https://dave.cheney.net/2015/11/05/lets-talk-about-logging
- 
+
+*** Log Levels
+Let's start talking about log levels -- and how we don't need many.
+
+**** Info
+The most common log level.
+
+How should we be using it?
+
+We should be using the =info= log level for high level things that help us
+understand the current state of the system. 
+
+Writing a service that accepts requests ( HTTP, GRPC, or otherwise )? Log each
+request. You don't have to log everything that happens in the request, or all
+the parameters. At minimum we should be logging timestamp, route, and
+method. For HTTP that's the path and the HTTP method ( get, post, etc ). For
+GRPC that's the method & whether it's unary or streaming. At the very least,
+this log will let you know that your service has started handling requests. That
+log should also contain one more piece of information: whether it succeeded or
+failed.
+
+That last piece of information is key. Without it, the logs are just noise;
+requests are happening but we don't know if they're working or just returning
+error messages. Logs are a quick and easy smoke test for "is everything okay?".
+
+Are all the requests in the log showing they returned successfully? Everything's
+good!
+
+Now, if things aren't going good we should be notified via other means. We don't
+want to end up having to tail all the logs to keep an eye on them and
+investigate any =500 Internal Server Error='s.
+
+Isn't that a bit contradictory though? Not really. Our systems live inside
+another system: AWS. Our systems may have things like load balancers or proxies
+sitting in front of them. So in production, logs are the quickest and easiest
+way to check something like "is this error coming from the service or something
+between the service and the user". Make a request, does the server spit out a
+request log line? If the answer is yes, dive into the code and figure out
+why. If the answer is no, well then you know the problem isn't in your code.
+
+So is that a good answer?
+
+"Use the =info= log level to act as a high-level observability tool for our
+systems."
+
+It sounds pretty good! Probably worth discussing more but for now that's
+probably enough.
+
+**** Debug
+The debug log level can be very handy. However, it should be turned off in all
+environments until you explicitly enable it somehow.
+
+This is because debug logs are the only logs that /should/ be incredibly
+noisy. They should have too much information, and there should be a lot of them.
+
+Why?
+
+If you're turning on debug logs, you're trying to get a much better picture of
+how the system is working, of the state of the system and how that changes.
+
+You probably also don't know exactly /what/ information you need, so they should
+have a lot of information so you can more easily search and filter your logs for
+what you need.
+
+So the =debug= log level is one we should hold on to. Also, if you felt that debug
+logging was handy while you were working on something, you should probably leave
+most of them in. They won't show up as soon as you go back to development
+mode. And if they were useful to you, they might be useful to someone else.
+
+Does that mean every other line should be a debug log? Nope!
+
+Rather, the =debug= log level should help you understand how the state of the
+system changes as you touch it and interact with it.
+
+Yes, debuggers are a much more useful tool for this kind of thing. But not
+everybody knows how to use a debugger, or is comfortable using one all the
+time. Until we can guarantee that everybody has the same skill level with
+debuggers then the =debug= log level should stick around.
+
+****  Warning
+Easiest place to start: nobody needs a warning log level.
+
+What do warnings represent?
+
+That something /might/ go wrong in the future. If you look in the logs and see a
+bunch of warnings, do you think "oh no! a bunch of stuff we need to fix!"? Or do
+you think "oh crap, I have to pull those warning logs out".
+
+Or do you think "everything is fine, warnings don't matter"?
+
+So what do we use instead? 
+
+Well, if it's an informational message, use the =info= log level. Otherwise, keep
+reading.
+
+**** Fatal
+The =fatal= log level is effectively logging the message, then calling
+=os.Exit(1)=. In principal this means:
+
+  - defer statements in other goroutines don’t run.
+  - buffers aren’t flushed.
+  - temporary files and directories aren’t removed.
+
+In effect, =log.Fatal= is a less verbose than, but semantically equivalent to,
+=panic=.
+
+It is commonly accepted that libraries should not use =panic=, but if calling
+=log.Fatal= has the same effect, surely this should also be outlawed.
+
+Suggestions that this cleanup problem can be solved by registering shutdown
+handlers with the logging system introduces tight coupling between your logging
+system and every place where cleanup operations happen; its also violates the
+separation of concerns.
+
+Don’t log at fatal level, prefer instead to return an error to the caller. If
+the error bubbles all the way up to =main.main= then that is the right place to
+handle any cleanup actions before exiting.
+
+**** Error
+Error handling and logging are closely related, so on the face of it, logging at
+error level should be easily justifiable. [[https://dave.cheney.net/2015/11/05/lets-talk-about-logging][Dave Cheney disagrees]].
+
+In Go, if a function or method call returns an error value, realistically you
+have two options:
+
+  - handle the error.
+  - return the error to your caller. You may choose to gift wrap the error, but
+    that is not important to this discussion.
+
+If you choose to handle the error by logging it, by definition it’s not an error
+any more — you handled it. The act of logging an error handles the error, hence
+it is no longer appropriate to log it as an error.
+
+Let me try to convince you with this code fragment:
+
+#+BEGIN_SRC go
+err := somethingHard()
+if err != nil {
+        log.Error("oops, something was too hard", err)
+        return err // what is this, Java ?
+}
+#+END_SRC
+
+You should never be logging anything at error level because you should either
+handle the error, or pass it back to the caller.
+
+To be clear, I am not saying you should not log that a condition occurred,
+
+#+BEGIN_SRC go
+if err := planA(); err != nil {
+        log.Infof("could't open the foo file, continuing with plan b: %v", err)
+        planB()
+}
+#+END_SRC
+
+...but in effect =log.Info= and =log.Error= have the same purpose.
+
+We are not saying "*DO NOT LOG ERRORS!*".
+
+Instead the question is, what is the smallest possible logging API? And when it
+comes to errors, does logging something as with an 'error' log level actually
+help us in any way?
+
+If our application encounters an error, but we don't want to return it: we
+handle it. That handling can include:
+
+ - log a message (at the =info= level) and continue
+ - send the error to an error collection service such as Rollbar
+ - solve the problem the error tells us about
+
+If you can't handle the error, return it.
+
+Do not do both.
+
+**** Logging An Error Is Handling It
+We've covered this twice now; previously back in "[[id:0372bf73-a8e4-4eb4-823f-0dcf1564163b][Only Handle An Error
+Once]]". This time we've come at it from a different direction. Previously we were
+talking about why we shouldn't handle an error *and* return it. Then our argument
+was that by handling an error ( which /includes logging it/ ) AND returning it we
+either make the error less useful or potentially creating situations where we
+think we've handled an error but forget to return it.
+
+Now we're coming at it from a different angle. Now we have a case for why
+logging /is/ handling an error. That case is: the error isn't fatal and we think
+we can recover from it, so we log that our initial attempt failed and are trying
+to recover.
+
+Now error logs are useful, because we've made it clear that errors show up in
+logs to tell us something went wrong but we tried to recover from it. If we
+continue to handle errors properly then either the error gets solved, or we get
+a notification from Rollbar that some operation failed. If we're doing
+everything correctly, that error has a request ID that we can use to filter the
+logs so that we can see what happened /before/ the error.
+
+How do we know we've handled the error? We passed it into a function. That
+function happened to be =log.Infof=, but that still counts. Notice how we don't
+pass =err= into =planB=. If we did, that would be trying to handle the error
+twice.
+
+#+BEGIN_NOTE
+=planB= shouldn't care that it's being called because =planA= failed. What if we
+want to be able to call =planB= first in some situations?
+#+END_NOTE
+
+Think of it this way: a function that wraps an error is /the only kind of
+function/ that you can pass an error into that doesn't count as handling
+it. Therefore, passing an error into /any other kind of/ /function/ counts as
+handling it.
+
+*** Why Log?
+So we know some of the things we shouldn't be doing with logs.
+
+For one, they're /not/ a way of annotating an error before you return
+them. Rather, errors that show up in the logs are ones that have been handled --
+the log is just there to say "hey, caught this error, trying something
+else". These are actually good, as they can highlight areas that might need to
+be re-thought.
+
+If =planA= fails 90% of the time, don't remove the handling of the error ( in this
+case, by logging it ); fix the problem.
+
+We can probably also agree on some other things:
+
+ - don't put anything in the logs that doesn't help you understand the state of
+   the system
+ - if logs are noisy, fix the source of the noise rather than removing the logs
+ - logs should contain data that helps filter, such as request ID
+
+So where does this leave us? How do we log and follow these rules?
+
+Well, for one, no package-scoped loggers. No more stuff like this:
+
+#+BEGIN_SRC go
+package foo
+
+import “mylogger”
+
+var log = mylogger.GetLogger(“github.com/project/foo”)
+#+END_SRC
+
+There are some other problems with this solution. First, our =foo= package now has
+a /compile-time/ dependency on the =mylogger= package. Second is that this tight
+coupling means that any package that consumes =foo= is also consuming
+=mylogger=. These both lead to a third problem: Go projects composed of packages
+using multiple logging libraries, /or/ fiefdoms of projects who can only consume
+packages that use their particular logging library.
+
+How do we solve this?
+
+At the risk of sounding like a broken record: the SOLID principles.
+
+Let's think about what we want to do:
+
+ - when things in =foo= happen, we want to be able to log them
+ - we don't want =foo= to be directly coupled to a specific =package= or logging
+   implementation
+ - we want to tell =foo= about what to use for logging at *runtime*
+
+How do we get this?
+
+Well, for one, we need to refactor =foo= a bit. =foo= shouldn't be importing a
+specific logger, and especially should not be creating it's own logger. =foo=
+should have a single purpose, and that purpose doesn't involve "knowing specific
+things about logging".
+
+Rather, all =foo= needs is something that lets it accomplish a behavior; in this
+case =foo= needs something that can do logging.
+
+#+BEGIN_SRC go
+  package foo
+
+  type logger interface {
+    Printf(string, ...any)
+  }
+
+  type Baz struct {
+    log logger
+    // other fields
+  }
+
+  func NewBaz(l logger) (*Baz, error){
+    // a bunch of other lines
+    return &Baz{log: l}, nil
+  }
+#+END_SRC
+
+So what does this mean for how we write code?
+
+Well, at the most basic level: if a package wants to do its own logging, it
+needs to define the logging behavior it wants in an interface and then ask for
+something that fulfills that interface when creating the types that need to be
+able to log.
+
+In other words: we have functions on =Baz= that need to be able to write logs. So
+we define what we want that logging interface to look like, in this case it's an
+interface with just =Printf=. Why just =Printf=? We don't need methods for =Error=,
+=Fatal=, =Panic=, or =Warning=, as we discussed above. We only need a method for
+logging to the 'info' log level -- why not =Info= or =Infof=?
+
+Because there are [[https://pkg.go.dev/search?q=Printf&m=symbol][way more methods named Printf]].
+
+Wait, hold on, that won't work with the code we've got. You can't pass a package
+as a type; so we can't do this:
+
+#+BEGIN_SRC go
+  package main
+
+  import (
+    "log"
+
+    "github.com/janetechinc/foo
+  )
+
+  func main(){
+    b, err := NewBaz(log)
+    ...
+#+END_SRC 
+
+So what do we do? Wrap every log package we want to use so that the functions
+are attached to a type so we can pass it in?
+
+That sounds like too much work.
+
+Let's do this instead:
+
+#+BEGIN_SRC go
+
+  package foo
+
+  type logFn func(string, ...any)
+
+  type Baz struct {
+    log logFn
+    // other fields
+  }
+
+  func NewBaz(l logFn) (*Baz, error){
+    // a bunch of other lines
+    return &Baz{log: l}, nil
+  }
+#+END_SRC
+
+Huzzah! Now we can do this:
+
+#+BEGIN_SRC go
+  package main
+
+  import (
+    "log"
+
+    "github.com/janetechinc/foo
+  )
+
+  func main(){
+    b, err := NewBaz(log.Printf)
+    ...
+#+END_SRC
+
+Of course, this solution doesn't work if you want to use a logging package like
+[[https://pkg.go.dev/go.uber.org/zap][zap]], which helpfully has plenty of types that /could/ fit an
+interface. Unfortunately none of the types defined by =zap= have a =Printf=. It does
+have =Infof= on the sugared logger though: =zap.S().Infof(string, ...any)=. 
+
+So which do you use? The function type or the interface?
+
+This is something better covered later on, but prefer logging packages like =zap=
+over ones that use package-level functions like the standard library =log=.
+
+Why? How does a package handle logging with only exported functions?
+
+Ponder these questions, and how you have to solve them when you're exporting functions:
+
+ - How do you define your log format?
+ - How do you change the log level?
+ - How do you create sub-loggers?
+   
+If you said package-level variables, you'd be right. We'll go over why this is a
+bad idea later on, but for now we'll end with this:
+
+Logging isn't a static thing. You want to pass your logger around so that you
+can create sub-loggers, add fields for things like request IDs -- and not have
+those things impact how logging works in other packages.
+
+** Structured Logging :noexport:
+TODODOO

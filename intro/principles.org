@@ -92,15 +92,15 @@ in may change; then the goal for the program needs to be that it's /maintainable
 
 In other words, every repository of Go code at Jane must be maintainable --
 because even if we discover the secret to immortality you're not going to want
-to have to maintain some Go in a Jane repository forever. You need to be able to
-hand it off to other developers.
+to have to maintain some Go code in a Jane repository forever. You're going to
+want to be able to hand it off to other developers.
 
 Therefore we should be striving to write clear code.
 
 ** Productivity
 The last underlying principle to highlight is productivity. Developer
 productivity is a sprawling topic but it boils down to this; how much time do
-you spend doing useful work verses waiting for your tools or hopelessly lost in
+you spend doing useful work, verses waiting for your tools or hopelessly lost in
 a foreign code-base. Go programmers should feel that they can get a lot done
 with Go.
 
@@ -123,6 +123,19 @@ Go programmers don’t spend days debugging inscrutable compile errors. They don
 waste days with complicated build scripts or deploying code to production. And
 most importantly they don’t spend their time trying to understand what their
 coworker wrote.
+
+That isn't to say Go developers /never/ spend days trying to figure out some weird
+obscure problem in Go. That's obviously not true; just Google `golang debug
+memory leak` and you should find at least a handful of folks talking about all
+the time they spent tracking down a memory leak.
+
+Rather, Go tries to eliminate as many unproductive parts of the development
+process as it can. Go tries to be expressive when throwing a compile error so
+that it's easy to fix the problem. Go tries to make it so all you need is =go
+build=. If your project is architected properly, that's all you should need
+to get a /working/ -- but not necessarily /correct/ -- binary. So we're left with
+the most important part of being productive: *understanding code so you can make
+changes to it*.
 
 To say that Go is a language designed to be productive is an understanding it is
 built for software design in the large, at industrial scale.

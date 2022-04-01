@@ -1,10 +1,9 @@
+** Testing
 Go makes testing easier than other languages in some ways, and harder in
 others. Testing is built into the language, which is great! However, all you get
 is the somewhat barebones ( but still _awesome_ ) =testing= package.
 
-So, what do we do with this?
-
-Well, because testing is built into the language, we should use it.
+So, because testing is built into the language, we should use it.
 
 For example, this means that your initial response when given either a bug to
 fix or a feature to implement, should be to write a failing test first. But once
@@ -16,7 +15,7 @@ cleaner to write and maintain.
 
 The first thing to note before we continue though, is this:
 
-Tests lock in behaviour.
+*Tests lock in behaviour.*
 
 Unit tests at the package level should lock in the behaviour of the package’s
 API. They describe, in code, what the package promises to do.
@@ -27,7 +26,7 @@ contract you can assert as simply as typing go test. At any stage, you can know
 with a high degree of confidence, that the behaviour people relied on before
 your change continues to function after your changes.
 
-** Test Test Testing
+*** Test Test Testing
 Let’s say we have a function that splits strings:
 
 #+BEGIN_SRC go
@@ -76,7 +75,7 @@ Tests are just regular Go functions with a few rules:
 In our test we call =Split= with some inputs, then compare it to the result we
 expected.
 
-*** Going beyond 100% coverage
+**** Going beyond 100% coverage
 
 So, we wrote one test case, got 100% coverage, but this isn’t really the end of
 the story. We have good branch coverage but we probably need to test some of the
@@ -107,7 +106,7 @@ func TestSplitNoSep(t *testing.T) {
 We’re starting build a set of test cases that exercise boundary conditions. This
 is good.
 
-*** Introducing table driven tests
+**** Introducing table driven tests
 
 However the there is a lot of duplication in our tests. For each test case only
 the input, the expected output, and name of the test case change. Everything
@@ -196,7 +195,7 @@ Each subtest is its own anonymous function, therefore we can use =t.Fatalf=,
 =t.Skipf=, and all the other =testing.Thelpers=, while retaining the compactness of
 a table driven test.
 
-*** Individual sub test cases can be executed directly
+**** Individual sub test cases can be executed directly
 
 Because sub tests have a name, you can run a selection of sub tests by name using the go test -run flag.
 
@@ -209,7 +208,7 @@ Because sub tests have a name, you can run a selection of sub tests by name usin
         split_test.go:25: expected: [a b c], got: [a b c ]
 #+END_SRC
 
-*** Table Driven Testing++
+**** Table Driven Testing++
 So one improvement I stumbled upon recently is this:
 
 Don't store the table of test cases within the test itself; put them in a JSON
@@ -265,8 +264,8 @@ files aren't 90% tables.
 One thing that this can't do is allow you to define functions as part of your
 test table; I'm still pondering how to solve that.
 
-** Benchmarks :noexport:
+*** Benchmarks                                                   :noexport:
 https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go
 
-** Examples :noexport:
+*** Examples                                                     :noexport:
  

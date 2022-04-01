@@ -1,2 +1,2 @@
+** Tips, Tricks, & Gotchas
 https://dave.cheney.net/2019/06/10/constant-time
- 

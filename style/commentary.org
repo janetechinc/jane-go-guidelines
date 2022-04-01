@@ -14,8 +14,9 @@ should do one — ​and only one —​ of the following three things:
  1. The comment should explain /what/ the thing does.
  2. The comment should explain /how/ the thing does what it does.
  3. The comment should explain /why/ the thing is the way it is.
-
-*** What
+    
+*** Quick Dive
+**** What
 The first form is ideal for commentary on public symbols: 
 
 #+BEGIN_SRC go
@@ -23,7 +24,7 @@ The first form is ideal for commentary on public symbols:
 // If successful, methods on the returned file can be used for reading.
 #+END_SRC
 
-*** How
+**** How
 The second form is ideal for commentary inside a method:
 #+BEGIN_SRC go
 // queue all dependant actions
@@ -33,7 +34,7 @@ for _, dep := range a.Deps {
 }
 #+END_SRC
 
-*** Why
+**** Why
 The third form, the /why/, is unique as it does not displace the first two, but
 at the same time it’s not a replacement for the /what/, or the /how/. The /why/ style
 of commentary exists to explain the external factors that drove the code you
@@ -60,7 +61,7 @@ enough hints that the next reader can follow your research. Links to issues,
 design documents, RFCs, or specifications that provide more background are
 always helpful.
 
-** Comments On Variables & Constants Should Describe The Contents
+*** Comments On Variables & Constants Should Describe The Contents
 When you add a comment to a variable or constant, that comment should describe
 the variables /contents/, not the variables /purpose/.
 
@@ -89,7 +90,7 @@ context of HTTP/ the number =100= is known as =StatusContinue=, as defined in RF
 7231, section 6.2.1. The comment included with that declaration helps the reader
 understand /why/ =100= has special significance as a HTTP response code.
 
-*** Note 1: Uninitialized Variables
+**** Note 1: Uninitialized Variables
 For variables without an initial value, the comment should describe who is
 responsible for initialising this variable.
 
@@ -108,7 +109,7 @@ not describe who uses them is a hint that =dowidth= and =sizeCalculationDisabled
 are intimately entwined. The comments presence suggests a possible design
 weakness.
 
-** Comments On Functions Should Describe Their Purpose
+*** Comments On Functions Should Describe Their Purpose
 The comment on a function signature should describe what the function intends to
 do, not how it does it. Similarly they should describe the inputs and outputs of
 a function, not be overly perscriptive of how those should be used. Rather than
@@ -127,7 +128,7 @@ Be on the lookout for conjoining words like or, they are smell that a function
 may do more than one thing, violating the single responsibility principle. The
 comment should explain what the thing does, not how it does it.
 
-** Always Document Public Symbols & Types
+*** Always Document Public Symbols & Types
 Because [[https://pkg.go.dev/golang.org/x/tools/cmd/godoc][godoc]] is the documentation for your package, you should always add a
 comment for every public symbol —​ type, variable, constant, function, and method
 —​ declared in your package.
@@ -199,7 +200,7 @@ find it hard to write the comment, then it’s a sign that the code you’re abo
 to write is going to be hard to understand.
 #+END_TIP
 
-** Don't Comment Bad Code, Rewrite It
+*** Don't Comment Bad Code, Rewrite It
 Comments highlighting the grossness of a particular piece of code are not
 sufficient. If you encounter one of these comments, you should raise an issue as
 a reminder to refactor it later. It is okay to live with technical debt, as long
@@ -218,7 +219,7 @@ issue, but they may be the best person to ask when the time comes to address it.
 Additionally, there are tools that can search a code base to find all such
 'TODO' comments and surface them. Some can even automatically generate tickets!
 
-** Rather Than Commenting A Block of Code, Refactor It
+*** Rather Than Commenting A Block of Code, Refactor It
 #+BEGIN_QUOTE
 Good code is its own best documentation. As you’re about to add a comment, ask
 yourself, 'How can I improve the code so that this comment isn’t needed?'
