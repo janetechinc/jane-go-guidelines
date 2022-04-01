@@ -314,8 +314,8 @@ Well that's because we're doing this the SOLID way. Each function should have
 one responsibility. But this doesn't mean we want to read all the data into a
 =[]byte= and pass that in, because then we're dealing with potentially lots of
 data ( megabytes, gigabytes, potentially even terabytes ). So using the
-=io.Reader= interface let's us signal that we want data, but not all at once. What
-if the processor only cares about the first megabyte of data? 
+=io.Reader= interface let's us signal that we want data, but not all at once. For
+example, what if the processor only cares about the first megabyte of data? 
 
 Additionally, =ProcessDataIntoOutput= doesn't need to care about closing the
 reader or writer. It doesn't know, or need to know, if we're done reading /or/
@@ -326,6 +326,6 @@ iteration?
 
 Reading data, processing it, and writing it is small enough to be a single
 responsibility -- so long as you're using interfaces that limit your function to
-/just that behavriour/. 
+/just that behaviour/. 
 #+END_NOTE
 
