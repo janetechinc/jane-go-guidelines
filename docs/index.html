@@ -128,7 +128,7 @@
 </ul></li>
 <li><a href="#apendixes"><span class="toc-section-number">6</span> Apendixes</a>
 <ul>
-<li><a href="#too-many-behaviours"><span class="toc-section-number">6.1</span> Too Many Behaviours</a></li>
+<li><a href="#error-handling-too-many-behaviours"><span class="toc-section-number">6.1</span> Error Handling: Too Many Behaviours</a></li>
 <li><a href="#why-do-some-packages-define-their-own-interfaces"><span class="toc-section-number">6.2</span> Why <em>Do</em> Some Packages Define Their Own Interfaces?</a></li>
 <li><a href="#why-is-io.reader-an-example-of-great-interface-design"><span class="toc-section-number">6.3</span> Why is <code class="verbatim">io.Reader</code> an example of great interface design?</a></li>
 <li><a href="#api-design-google-vs-amazon"><span class="toc-section-number">6.4</span> API Design, Google vs Amazon</a></li>
@@ -3135,8 +3135,8 @@ exiting!
 </section>
 <section id="apendixes" class="level1" data-number="6">
 <h1 data-number="6"><span class="header-section-number">6</span> Apendixes</h1>
-<section id="too-many-behaviours" class="level2" data-number="6.1" id="ed34c1e7-7924-49bf-88e4-75763a84ea90">
-<h2 data-number="6.1" id="ed34c1e7-7924-49bf-88e4-75763a84ea90"><span class="header-section-number">6.1</span> Too Many Behaviours</h2>
+<section id="error-handling-too-many-behaviours" class="level2" data-number="6.1" id="ed34c1e7-7924-49bf-88e4-75763a84ea90">
+<h2 data-number="6.1" id="ed34c1e7-7924-49bf-88e4-75763a84ea90"><span class="header-section-number">6.1</span> Error Handling: Too Many Behaviours</h2>
 <p>What do we do when we have a function that can return errors that match a number of behaviours?</p>
 <p>For example:</p>
 <div class="sourceCode" id="cb176"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb176-1"><a href="#cb176-1" aria-hidden="true" tabindex="-1"></a><span class="co">// ProcessData instructs the time sheet it receives to read data from</span></span>
@@ -3362,9 +3362,9 @@ exiting!
 <p>Now, it's very clear. The name of the function tells us what it <em>does</em> with the data – it uses a <code class="verbatim">processor</code> to process data from an <code class="verbatim">io.Reader</code>, and writes the data into an <code class="verbatim">io.Writer</code>.</p>
 <div class="NOTE">
 <p>You might be wondering why the functions take <code class="verbatim">io.Writer</code> or <code class="verbatim">io.Reader</code> instead of <code class="verbatim">io.WriteCloser</code>, <code class="verbatim">io.ReadCloser</code>, or any of the other composite interfaces defined in the <code class="verbatim">io</code> package.</p>
-<p>Well that's because we're doing this the SOLID way. Each function should have one responsibility. Reading data, processing it, and writing it is small enough to be a single responsibility. But <code class="verbatim">ProcessData</code> shouldn't care about closing the reader or the writer.</p>
-<p>How does it know it's done?</p>
-<p>What if we want to process multiple sets of data, and store them as individual files inside a compressed archive. Using <code class="verbatim">io.Reader</code> and <code class="verbatim">io.Writer</code> means you can do that. As soon as <code class="verbatim">ProcessData</code> has to care about whether or not to close the file it's doing too much.</p>
+<p>Well that's because we're doing this the SOLID way. Each function should have one responsibility. But this doesn't mean we want to read all the data into a <code class="verbatim">[]byte</code> and pass that in, because then we're dealing with potentially lots of data ( megabytes, gigabytes, potentially even terabytes ). So using the <code class="verbatim">io.Reader</code> interface let's us signal that we want data, but not all at once. What if the processor only cares about the first megabyte of data?</p>
+<p>Additionally, <code class="verbatim">ProcessDataIntoOutput</code> doesn't need to care about closing the reader or writer. It doesn't know, or need to know, if we're done reading <em>or</em> writing. This function might get called inside a loop as we process a bunch of input files into a single output file. How much worse would this be if that code had to re-open and <em>seek to the right spot</em> before moving on to the next loop iteration?</p>
+<p>Reading data, processing it, and writing it is small enough to be a single responsibility – so long as you're using interfaces that limit your function to <em>just that behavriour</em>.</p>
 </div>
 </section>
 <section id="why-do-some-packages-define-their-own-interfaces" class="level2" data-number="6.2">

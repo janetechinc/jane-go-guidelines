@@ -1,4 +1,4 @@
-**  Too Many Behaviours
+**  Error Handling: Too Many Behaviours
 :PROPERTIES:
 :ID:       ed34c1e7-7924-49bf-88e4-75763a84ea90
 :END:
@@ -311,15 +311,21 @@ You might be wondering why the functions take =io.Writer= or =io.Reader= instead
 in the =io= package.
 
 Well that's because we're doing this the SOLID way. Each function should have
-one responsibility. Reading data, processing it, and writing it is small enough
-to be a single responsibility. But =ProcessData= shouldn't care about closing the
-reader or the writer.
+one responsibility. But this doesn't mean we want to read all the data into a
+=[]byte= and pass that in, because then we're dealing with potentially lots of
+data ( megabytes, gigabytes, potentially even terabytes ). So using the
+=io.Reader= interface let's us signal that we want data, but not all at once. What
+if the processor only cares about the first megabyte of data? 
 
-How does it know it's done?
+Additionally, =ProcessDataIntoOutput= doesn't need to care about closing the
+reader or writer. It doesn't know, or need to know, if we're done reading /or/
+writing. This function might get called inside a loop as we process a bunch of
+input files into a single output file. How much worse would this be if that code
+had to re-open and /seek to the right spot/ before moving on to the next loop
+iteration?
 
-What if we want to process multiple sets of data, and store them as individual
-files inside a compressed archive. Using =io.Reader= and =io.Writer= means you can
-do that. As soon as =ProcessData= has to care about whether or not to close the
-file it's doing too much.
+Reading data, processing it, and writing it is small enough to be a single
+responsibility -- so long as you're using interfaces that limit your function to
+/just that behavriour/. 
 #+END_NOTE
 
