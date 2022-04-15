@@ -19,10 +19,10 @@ product that many people will work with over time. Engineers will come and go,
 teams will grow and shrink, requirements will change, features will be added and
 bugs fixed. This is the nature of software engineering.
 
-I've been using Go for over 5 years now, but I'm not trying to argue that
-seniority gives my views more weight. Rather, the advice I'm going over in this
-document is informed by what I believe to be the guiding principles of Go, as
-well as the principles of Jane.
+Some of us have been using Go for over half a decade at this point, but we're
+not trying to argue that seniority gives the views of a single developer more
+weight. Rather, the advice we cover in this document is informed by what we
+believe to be the guiding principles of Go, as well as the principles of Jane.
 
 So what are the guiding principles of Go?
 
@@ -31,7 +31,7 @@ So what are the guiding principles of Go?
   3. Productivity
 
 #+BEGIN_NOTE
-You'll notice that I didn't say /performance/, /concurrency/, or anything
+You'll notice that we didn't say /performance/, /concurrency/, or anything
 else. There are languages quicker than Go, but they're certainly not as
 simple. There are languages which make concurrency their highest goal but
 they're not as readable nor as productive as Go.
@@ -49,8 +49,10 @@ Controlling complexity is the essence of computer programming.
 We've all been in a situation where we said "I can't understand this code",
 right? Regardless of whether we only said it to ourselves or not, it's
 happened. We've all worked on programs that where we were too nervous about
-making any changes because we might break something elsewhere. A part you don't
-understand and don't know how to fix. This is complexity.
+making any changes because we might break something elsewhere. A section of the
+code base you don't understand and don't know how to fix.
+
+This is complexity.
 
 #+BEGIN_QUOTE
 There are two ways of constructing a software design: One way is to make it so
@@ -66,6 +68,12 @@ and causes burnout.
 
 Therefore simplicity is the highest goal of Go. Whatever code we end up writing,
 we should be able to agree that the code we write is simple as we can make it.
+
+This isn't to say that simplicity is /easy/; rather that despite simplicity being
+something that takes hard work and effort to achieve, simplicity in our code is
+worth the effort. For more on this topic, [[https://youtu.be/Ic2y6w8lMPA?list=PLfk7j_TXzEZ-eyNNuNDoU0JdhIzRluclv][Kate Gregory gave an excellent talk on
+simplicity at a conference]], we highly recommend you take the time to watch the
+talk.
 
 ** Clarity
 #+BEGIN_QUOTE
@@ -97,6 +105,25 @@ want to be able to hand it off to other developers.
 
 Therefore we should be striving to write clear code.
 
+We'll go into what this means in more detail as we cover various Go features and
+architectural guidelines, but we can give a high-level overview of what we mean
+by clarity here.
+
+On the one hand, clarity has a fairly easy to understand meaning ( although the
+dictionary definition of [[https://www.merriam-webster.com/dictionary/clarity]["the quality or state of being clear"]] doesn't really
+help much here ). It's something we all have a pretty intuitive
+understanding. If you can read code without having to think about it, it's
+clear.
+
+However, we mention this to bring up a specific point: some code can't be made
+clear enough that anyone can read an understand it. The same way that
+mathematicians try to reduce equations to their simplest form, programmers try
+to simplify our code. But just like mathematicians there are some kinds of code
+that we will not be able to simplify. In cases such as these, clarity can mean
+making the code as simple as possible -- and then annotating the code with
+comments that try to explain why this code still has some hard-to-understand
+complexity.
+
 ** Productivity
 The last underlying principle to highlight is productivity. Developer
 productivity is a sprawling topic but it boils down to this; how much time do
@@ -126,8 +153,8 @@ coworker wrote.
 
 That isn't to say Go developers /never/ spend days trying to figure out some weird
 obscure problem in Go. That's obviously not true; just Google `golang debug
-memory leak` and you should find at least a handful of folks talking about all
-the time they spent tracking down a memory leak.
+memory leak` and you should find at least a dozen folks talking about all the
+time they spent tracking down a memory leak.
 
 Rather, Go tries to eliminate as many unproductive parts of the development
 process as it can. Go tries to be expressive when throwing a compile error so
@@ -138,11 +165,27 @@ the most important part of being productive: *understanding code so you can make
 changes to it*.
 
 To say that Go is a language designed to be productive is an understanding it is
-built for software design in the large, at industrial scale.
+built for software design in the large, at industrial scale. 
 
 Productivity is what the Go team mean when they say the language must scale.
 
-** Other Notes :noexport:
+So if you've been writing simple and clear code then you should already be
+writing productive code. In other words, code that your co-workers can work on
+without *requiring* that they pair with you so you can explain it.
+
+** Which Principle Is Most Important?
+The authors of this document would argue that the order in which we've just
+presented these principles is how we should all rank them in order of
+importance.
+
+In other words:
+
+ - First try to write simple code; no clever tricks or obfuscation
+ - Second, try to write clear code; this includes making complicated code
+   obviously complicated
+ - Lastly, try to write code that doesn't hurt the performance of other programmers
+
+** Some SOLID Secondary Principles
 Something that may become apparent as you read through this document is that a
 lot of what's laid out here is taking the SOLID principles and applying them to
 Go.
@@ -151,9 +194,363 @@ If you haven't ever heard of SOLID, or need a quick refresher I'd recommend [[ht
 article from Digital Ocean]]. However, to prevent you from breaking flow I'll go
 over the SOLID principles real quick here.
 
-*** S - Single Responsibility
-https://www.digitalocean.com/community/conceptual_articles/s-o-l-i-d-the-first-five-principles-of-object-oriented-design
-*** O - Open-Closed 
-*** L - Liskov Substitution
-*** I - Interface Segregation
+*** S - Single-Responsibility Principle
+The first principle is the "Single-Responsibility Principle":
+
+#+BEGIN_QUOTE
+A class or function should have one and only one reason to change.
+This means that a class or function should have only one job.
+#+END_QUOTE
+
+What does that mean?
+
+#+begin_quote
+Why is it important that a piece of code should have only one reason for change?
+Well, as distressing as the idea that your own code may change, it is far more
+distressing to discover that code your code depends on is changing under your
+feet. And when your code does have to change, it should do so in response to a
+direct stimuli, it shouldn’t be a victim of collateral damage.
+
+- Dave Cheny, [[https://dave.cheney.net/2016/08/20/solid-go-design][SOLID Go Design]]
+#+end_quote
+
+This principle is fairly straight-forward, but often feels like the first thing
+that gets pushed aside when we start writing production code.
+
+For example, take something we all have written plenty of times: handlers for
+HTTP routes in a web application. How many times have you written a handler that
+checks the request data to validate it, then make some database calls, do some
+processing, maybe another database call or two, and then do a bunch of work to
+construct a JSON response to send back?
+
+The point of this principle is to try and encourage us to write code that isn't
+tightly coupled. We achieve this by trying to follow two specific guidelines:
+
+ 1. Everything within a function should be at the same level of abstraction
+ 2. Extract functionality into named functions and classes until you are unable
+    to extract any more.
+ 
+*** O - Open-Closed Principle
+The definition for this principle is as follows:
+
+#+begin_quote
+Software entities should be open for extension, but closed for modification.
+–Bertrand Meyer, Object-Oriented Software Construction
+#+end_quote
+
+In Go this mostly means using multiple types to compose the behaviour we want,
+such as embedding structs. There are also some other details involved in the
+Open-Closed principle in Go that mostly relate to package and API design, so
+we'll cover those parts later on.
+ 
+*** L - Liskov Substitution Principle
+If you want the formal definition you can [[https://en.wikipedia.org/wiki/Liskov_substitution_principle][go read the Wikipedia article]], but a
+simpler way of putting this principle is as follows:
+
+#+begin_quote
+Two types are substitutable if they exhibit behaviour such that the caller is
+unable to tell the difference.
+#+end_quote
+
+In other languages this usually means getting involved with things like abstract
+base classes or funky inheritance things, but in Go we have a pretty simple way
+of implementing this principle.
+
+Interfaces!
+
+To quote a bit more from Dave Cheny and his article [[https://dave.cheney.net/2016/08/20/solid-go-design][SOLID Go Design]]:
+
+#+begin_quote
+[...] In Go, types are not required to nominate that they implement a particular
+interface, instead any type implements an interface simply provided it has
+methods whose signature matches the interface declaration.
+
+We say that in Go, interfaces are satisfied implicitly, rather than explicitly,
+and this has a profound impact on how they are used within the language.
+
+Well designed interfaces are more likely to be small interfaces; the prevailing
+idiom is an interface contains only a single method. It follows logically that
+small interfaces lead to simple implementations, because it is hard to do
+otherwise. Which leads to packages comprised of simple implementations connected
+by /common behaviour/.
+#+end_quote
+
+In other words: by relying on interfaces to define the behaviour we want to use
+naturally leads to implementing the Liskov substitution principle. This is
+because a function or type that uses an interface as a function argument type or
+member variable type doesn't care /what/ fulfills the interface, /only that it/
+/implements the interface/.
+
+*** I - Interface Segregation Principle
+From "Uncle Bob" we get our fourth principle:
+
+#+begin_quote
+Clients should not be forced to depend on methods they do not use.
+
+–Robert C. Martin
+#+end_quote
+
+For Go, we once again turn to interfaces. This is because this principle is also
+about behaviour; specifically unwanted behaviour. Let's take a look at a
+concrete example: let's pretend we've been given the task to write a function
+that persists a =Document= structure to disk:
+
+#+begin_src go
+// Save writes the contents of doc to the file f.
+func Save(f *os.File, doc *Document) error
+#+end_src
+
+While at first glance this seems fairly straightforward, it has some problems.
+
+First, we can only save our =*Document= to a file. If we want to save it to a
+network location, we'd have to write a new method. That, or change the signature
+of this method -- arguably an even worse option. Remember, our Simplicity,
+Clarity, Single-Responsibility, and Open-Closed principles mean that changing
+the function for how we save a document *should not require changing any of the
+code that calls this function*.
+
+This function is also a pain to test ( or even debug ). For one, to validate it
+works correctly we have to:
+ - check the file after it's been written
+ - which means we need to have a safe location to put the file
+ - and we need to clean up after the file has been written
+
+That's a lot of stuff we'd have to deal with to write a test for what should be
+a pretty simple feature to implement.
+
+Lastly, =*os.File= defines a *bunch* of methods which our =Save= function shouldn't
+know or care about. It's not the responsibility of =Save= to know if a path is a
+symlink, or what the permissions are -- it's only responsibility is to convert
+the =*Document= into a format it will then write to... somewhere. Additionally,
+passing in =*os.File= leaves the door open for less disciplined developers to come
+along and do more things in =Save= that shouldn't be happening there ( remember:
+Single-Responsibility ).
+
+It's highly worth reading [[https://dave.cheney.net/2016/08/20/solid-go-design][the entire 'I' section of Dave Cheney's post]], but
+where we end up is with a =Save= function that looks like this:
+
+#+begin_src go
+  // Save writes the contents of doc to the supplied Writer.
+  func Save(w io.Writer, doc *Document) error
+#+end_src
+
+Our =Save= function can now save to /anything/ that fulfills the =io.Writer=
+interface: a database, a network connection, a file, an object store -- even
+memory if we really want. Additionally, we can easily write to a variety of
+different kinds of files, or compose multiple writers to do what we need:
+
+#+begin_src go
+  func SendZippedDocument(w http.ResponseWriter, doc *Document) error {
+    z := zip.NewWriter(w)
+    return Save(z, doc)
+  }
+#+end_src
+
+Neat, right? Now think of how many different ways you could use this
+function. All of this useful ( and dare we say... simple ) functionality because
+we wrote =Save= so that it doesn't care /what/ is passed in, just that it has a
+method called =Write= that accepts a =[]byte= and returns =(int,error)=.
+
 *** D - Dependency Inversion
+Our last principle also comes from Robert C. Martin:
+
+#+begin_quote
+High-level modules should not depend on low-level modules. Both should depend on
+abstractions.
+
+Abstractions should not depend on details. Details should depend on
+abstractions.
+
+–Robert C. Martin
+#+end_quote
+
+In Go, what this means is we should be striving to have import trees that are
+well structured, and have packages that import as little as possible.
+
+What this means is our import tree should be as shallow as we can make it, and
+try to ensure that the imports are structured so that low-level packages depend
+on higher-level ( ie, more abstract ) packages.
+
+So, rather than this:
+
+#+begin_src plantuml :file bad-arch.png :dir ../docs/assets :results value file :exports results
+  class PackageA
+  class PackageB
+  class PackageC
+  class PackageD
+  class PackageE
+
+  PackageA --> PackageB
+  PackageA --> PackageE
+  PackageB --> PackageC
+  PackageB --> PackageD
+  PackageC --> PackageE
+  PackageC --> PackageA
+  PackageD --> PackageE
+  PackageD --> PackageA
+
+  hide fields
+  hide methods
+#+end_src
+
+#+RESULTS:
+[[file:/assets/bad-arch.png]]
+
+See how the arrows are pointing in multiple directions? Also, what happens if
+something in =Package E= changes? Most likely, things in packages A, C, and D will
+have to change.
+
+Instead, what we should want is something like this:
+
+#+begin_src plantuml :file good-arch.png :dir ../docs/assets :results value file :exports results
+  class PackageA
+  class PackageB
+  class PackageC
+  class PackageD
+  class PackageE
+
+  PackageA -down-> PackageB
+  PackageA -down-> PackageC
+  PackageA -left-> PackageD
+  PackageA -right-> PackageE
+
+  PackageD ..> PackageC
+  PackageE ..> PackageB
+
+  hide fields
+  hide methods
+#+end_src
+
+#+RESULTS:
+[[file:/assets/good-arch.png]]
+
+In this, the dotted line is being used to show where =Package D= and =Package E= are
+used -- in this case, some type in =Package D= is used by =Package A= to fulfill an
+interface in =Package C= ( and same for =E= and =B= ).
+
+*** Applying The Principles
+One last note on these principles before we move on to the rest of the
+guidelines.
+
+You may be asking yourself how we implement these principles. How do we write
+code that follows our core principles:
+
+ - Simplicity
+ - Clarity
+ - Productivity
+
+...While also following these principles:
+
+ - Single-Responsiblity
+ - Open-Closed
+ - Liskov Substitution
+ - Interface Segregation
+ - Dependency Inversion
+
+The simplest way to put this is basically like this: by using TDD.
+
+There's much more to it that just saying "TDD" and walking away, of course. But
+let's forget TDD for a moment. Forget we even mentioned it.
+
+Instead, let's think about how we could go from the code we initially write to
+code that follows all these principles.
+
+Let's start with why we're writing code. Over 99% of the time, we write code
+because we want to implement some behaviour. Or some code we wrote has the wrong
+behaviour, and we need to fix it. Or some code needs to have its behaviour
+tweaked or improved based on user feedback. In other words, it's all about
+behaviour. Not what database you use, or what parameters a function needs, or
+anything else -- behaviour is what we implement when we write code.
+
+Now, let's say we wanted to be formal about this whole "writing code"
+process. We want to prove the code does what we claim. Not only that, we want to
+be able to prove it does what we claim at a moments notice.
+
+You've probably guessed we're going to write a test. And you'd be right! But
+what are we testing?
+
+We should be testing the behaviour.
+
+Let's go back to our =Save= method from when we were talking about the interface
+segregation principle; this little function:
+
+#+begin_src go
+  // Save writes the contents of doc to the supplied Writer.
+  func Save(w io.Writer, doc *Document) error
+#+end_src
+
+We know what this should do: convert the =*Document= into bytes and write it to
+our writer. We probably know a little bit of implementation detail, because the
+user probably specified something about /how/ a =*Document= gets transformed when
+it's written. Maybe it's supposed to be JSON, maybe XML -- or hell, maybe it's
+plain text because we're slowly replacing some aging COBOL code.
+
+In any case, we know what we should end up with: our document, in whatever
+format has been specified by the user. So all we need to test is that what gets
+written to our =io.Writer= matches the specification. You probably already have
+some output files: why not use one of those to validate the output?
+
+Let's say the output format is JSON, you could have a test that looks like this:
+
+#+begin_src go
+  func TestSave_OutputsCorrectly(t *testing.T){
+    expect := loadJSONFixture(t, "testdata/expected-save-output.json")
+
+    doc := &Document{
+      // fill in the fields so that it
+      // should get output the way you
+      // expect it to
+    }
+
+    got := bytes.NewBuffer(nil)
+    err := Save(buf, doc)
+    if err != nil {
+      t.Errorf("unable to save: %v", err)
+    }
+
+    // https://pkg.go.dev/github.com/stretchr/testify/require#JSONEqf
+    require.JSONEq(t, expect, got)
+  }
+#+end_src
+
+At this point, you can go write the =Save= method if you haven't already.
+
+There's an important next step though, once you've written =Save= and gotten this
+test passing.
+
+Refactoring!
+
+You have a test that proves your code does what it is supposed to do, and you've
+written the code to get the test to pass. But you're not done! The next step is
+to refactor the code so that all the principles get applied where
+necessary. This is where you apply design patterns, add comments, and tidy up
+the code.
+
+You can also write some tests that test for error conditions if you feel they're
+necessary. Though for a small function like =Save= there shouldn't be many ways to
+fail, and =Save= probably shouldn't be trying to /handle/ any errors.
+
+Remember, you're not testing the type getting passed into =Save= that implements
+=io.Writer=. You're testing that =Save= implements the behaviour it's supposed to.
+
+So a test that looks something like this should be enough to cover the behaviour
+of =Save=:
+
+#+begin_src go
+  type failingWriter struct { err error }
+  func (fw failingWriter) Write(_ []byte) (int, error) {
+    return 0, fw.err
+  }
+
+  func TestSave_ReturnsWriteError(t *testing.T){
+    expect := fmt.Errorf("nope")
+    w := failingWriter{expect}
+    doc := &Document{}
+    got := Save(w, doc)
+    if got != expect {
+      t.Errorf("got error '%v', expected '%v'", got, expect)
+    }
+  }
+#+end_src
+
+

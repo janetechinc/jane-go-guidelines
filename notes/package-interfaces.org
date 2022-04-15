@@ -1,5 +1,7 @@
-** Why /Do/ Some Packages Define Their Own Interfaces?
-There are, of course, some caveats.
+** Packages Defining Interfaces
+We talked about
+
+There are, of course, some caveats to where
 
 A good example is the =Reader= interface provided by the =io= package:
 

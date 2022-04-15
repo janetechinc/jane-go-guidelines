@@ -27,7 +27,7 @@ clear, maintainable code.
 
 ** On "Idiomatic" Go
 
-The authors of this document eschew the use of the phrase "idiomatic Go".
+The authors of this document prefer not to use the phrase "idiomatic Go".
 
 To say that something is idiomatic is to say that it follows the style of the
 time. If something is not idiomatic, it is not following the prevailing
@@ -84,7 +84,7 @@ As of the date writing this document ( March 25, 2022 ), Go 1.18 has been out fo
 ten days. One of the changes was the introduction of =any=, which is an /alias/ for
 =interface{}=. This was introduced as part of the general release of generics.
 
-So in this document I'll be using =any= -- just know that it's an alias for
+So in this document we'll be using =any= -- just know that it's an alias for
 =interface{}= and you should be good.
 
 As new features are introduced to Go in the future, we will endeavor to update
@@ -94,7 +94,7 @@ waiting before we decide on how to use said features. In other words: if a
 brand-new language feature in Go isn't covered here, and you think it should be
 covered, AND you work at Jane: open an issue or a PR!
 
-If you don't work at Jane, sorry!
+If you don't work at Jane, sorry... [[https://www.iheartjane.com/about-us?careers=true][but maybe we're hiring]]!
 
 ** Supported Go Version
 Speaking of the latest version of Go...
@@ -110,30 +110,32 @@ unintentionally relying on a bug that has been fixed, or a new feature still in
 it's shake-down phase ( such as generics ).
 
 While this does mean that we're always able to use new features, the main reason
-for this policy isn't that. The reason is that new versions of Go often include
-large productivity gains and optimizations. For example, in [[https://go.dev/doc/go1.18#runtime][Go 1.18, the runtime
-and the compiler have been updated]] to improve speed and memory usage. Previous
-versions of Go have seen large improvements to both speed or memory usage,
-sometimes both.
+for this policy isn't "to stay on the bleedgin edge, man". The reason is that
+new versions of Go often include large productivity gains and optimizations. For
+example, in [[https://go.dev/doc/go1.18#runtime][Go 1.18, the runtime and the compiler have been updated]] to improve
+speed and memory usage. Previous versions of Go have seen large improvements to
+both speed or memory usage, sometimes both.
 
 By keeping up with the latest releases we open up the possibility that our code
 will see speed & memory improvements without having to change anything except a
 single line in our =go.mod= files.
 
 In cases where the newest version has features that need some exploration before
-we figure out how we want to use them at Jane -- such as generics -- I suggest
-we allow repositories to stay on the previous version when a new version is
-released. This would be preferred over stating we /can't/ use a new version
-because we haven't fully evaluated it yet. The thinking here is that the only
-way to evaluate a new version is to use it, and we can't use it if the policy is
-"wait and see".
+we figure out how we want to use them at Jane -- such as generics -- the authors
+suggest we allow repositories to stay on the previous version when a new version
+is released instead of forcing them to upgrade. This would be preferred over
+stating we /can't/ use a new version because we haven't fully evaluated it
+yet. The thinking here is that the only way to evaluate a new version is to use
+it, and we can't use it if the policy is "wait and see what other folks think".
 
-This way teams & repositories that are comfortable with the risk of immediately
-upgrading to a new version of Go can do so, while other teams/repos can hold off
-to see how things shake out. This grace period shouldn't be indefinite,
-however. At the very least when a new version of Go is released teams will /have/
-to upgrade; ie, teams using Go 1.17 now can use that until Go 1.19 is released
--- at which point they have to upgrade to Go 1.18, as only Go 1.18 and 1.19 will
-be supported once Go 1.19 comes out. I would recommend that teams don't push
-upgrading versions until forced to by a new Go release, however.
+This way teams that are comfortable with the risk of immediately upgrading to a
+new version of Go can do so, while other teams/repos can hold off to see how
+things shake out. This grace period shouldn't be indefinite, however. At the
+very least when a new version of Go is released teams will /have/ to upgrade; ie,
+teams using Go 1.17 now can use that until Go 1.19 is released -- at which point
+they have to upgrade to Go 1.18, as only Go 1.18 and 1.19 will be supported once
+Go 1.19 comes out.
+
+The authors of this document would recommend that teams don't wait to upgrade
+their Go versions until forced to by a new Go release, however.
 

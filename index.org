@@ -48,6 +48,7 @@ should be able to help us catch and fix.
 #+INCLUDE: "arch/testing.org"
 #+INCLUDE: "arch/concurrency.org"
 #+INCLUDE: "arch/logging.org"
+#+INCLUDE: "arch/generics.org"
 
 * Architecture
 This section we're going to be diving into the most prescriptive set of
@@ -89,7 +90,7 @@ Other sources:
  - [[https://dave.cheney.net/2013/04/30/curious-channels][Curious Channels]], Dave Cheney
  - [[https://www.calhoun.io/pitfalls-of-context-values-and-how-to-avoid-or-mitigate-them/][Pitfalls of context values and how to avoid or mitigate them in Go]], Jon Calhoun
  - [[https://dave.cheney.net/2017/08/20/context-isnt-for-cancellation][Context isn't for cancellation]], Dave Cheney
-   
+
 **  Other Reading/Viewing
 This are articles or tutorials that aren't useful in defining a set of best
 practices, but are still worth reading.
@@ -106,11 +107,14 @@ practices, but are still worth reading.
  - [[https://www.youtube.com/watch?v=oV9rvDllKEg][Concurrency is not Parallelism]], a great presentation from Rob Pike
  - [[https://dave.cheney.net/2014/06/27/ice-cream-makers-and-data-races][Ice cream makers and data races]], blog post on data races in Go from Dave
    Cheney
-   
+
 *** Mutexes
  - [[https://www.programming-books.io/essential/go/mutex-gotchas-1c78058100ed4b45aab9461f69c05ecd][Mutex gotchas]]
 
 ** unorganized :noexport:
+:PROPERTIES:
+:ID:       8cfac2e5-452e-439a-833e-64b2546b50ac
+:END:
 
 https://go.dev/doc/effective_go
 
@@ -139,3 +143,23 @@ https://dave.cheney.net/2021/01/05/a-few-bytes-here-a-few-there-pretty-soon-your
 
 https://github.com/dgryski/awesome-go-style
 
+https://dave.cheney.net/2017/08/09/typed-nils-in-go-2
+
+https://go.dev/blog/pipelines
+
+https://www.prakharsrivastav.com/posts/golang-context-and-cancellation/
+https://dahernan.github.io/2015/02/04/context-and-cancellation-of-goroutines/
+
+https://rakyll.org/style-packages/
+
+https://eli.thegreenplace.net/2021/a-comprehensive-guide-to-go-generate/
+
+https://www.integralist.co.uk/posts/go-interfaces/
+https://eli.thegreenplace.net/2018/beware-of-copying-mutexes-in-go/
+https://vorpus.org/blog/notes-on-structured-concurrency-or-go-statement-considered-harmful/
+
+https://blog.gopheracademy.com/advent-2018/postmortem-debugging-delve/
+
+
+tools:
+https://github.com/mvdan/gofumpt

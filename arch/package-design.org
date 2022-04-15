@@ -57,7 +57,7 @@ is likely either;
    you should review your design, or consider merging the packages, or renaming
    the conflicting packages to make their purpose more specific. Consdider the
    =io/ioutil= and =net/http/httputil= packages as weak supporting evidence.
-   
+
 **** Avoid Package Names Like =base=, =common=, Or =util=
 A common cause of poor package names is what are often called /utility
 packages/. These are packages where helpers and utility code congeals over
@@ -99,7 +99,7 @@ It’s important to remember that the name of an identifier includes the name of
  - The =Reader= type from the =strings= package becomes =strings.Reader= when imported into other packages.
  - The =Error= interface from the =net= package is clearly related to network
    errors.
-   
+
 **** Return Early Rather Than Nesting Deeply
 As Go does not use exceptions for control flow there is no requirement to deeply
 indent your code just to provide a top level structure for the =try= and =catch=
@@ -176,7 +176,7 @@ usable without explicit initialisation.
   func main() {
     var m sync.Mutex
     val := 1
-    
+
     // m is usable without explicit initialisation.
     m.Lock()
     val++
@@ -295,7 +295,7 @@ If you want to reduce the coupling a global variable creates,
 For a more in-depth reason on why we should avoid package-level state ( aka:
 global variables ), [[https://dave.cheney.net/2017/06/11/go-without-package-scoped-variables][Dave Cheny has an excellent write-up that goes into this in
 depth]].
- 
+
 *** Interfaces
 For folks coming from other languages, interfaces can be hard to wrap your head
 around. They're used in a number of ways that make really understanding them a
@@ -307,6 +307,203 @@ At their core, though, this is what interfaces are:
 A way to specify the expected behaviour of an object; if it can do /this/, then it
 can be used /here/.
 #+END_HIGHLIGHT
+
+One thing that tends to get lost about interfaces in Go is that they are meant
+to be used to define /what behaviour is required at that point in the code/. They
+*aren't* meant to be how a package defines /what behaviour it implements/.
+
+**** But The Standard Library Does It
+So your first thought is probably "then why does the standard library do that"?
+
+And you'd be right to ask that! The standard library defines interfaces all over
+the place! Additionally, lots of those packages define some interfaces but /also/
+define a number of types that fulfill those interfaces.
+
+Take a look at the =io= package, for example.It defines a number of interfaces
+that deal with a low-level abstraction; =io.Reader= for reading bytes, =io.Writer=
+for writing, and =io.Closer= for closing the input or output to signal the
+operation is complete, and =io.Seeker= for moving to a specific spot within the
+input or output to read from or write to.
+
+Everything else in the =io= package either is a function that uses one of those
+four interfaces or a composite interface built from those four -- or it's a type
+that implements some useful low-level functionality using those interfaces.
+
+For example, =io.Pipe()= returns two types -- one that implements =io.Reader= and
+=io.Writer=. Anything that needs to just write data in one place that's been read
+from another can use =io.Pipe()=, especially if the reader & writer have to be
+passed into functions that make calling =io.Copy= a no-go.
+
+However, =io= is a pretty low-level package. It's the tiniest abstraction you can
+wrap around the idea of reading and writing bytes. As such, you can find
+=io.Reader= and =io.Closer= all over the place.
+
+And that can be said for most of the standard library, right? Why is that? Well,
+maybe it's because of the name: "standard library". A library of standard
+functions and types that cover all the basics of what's needed in a
+program. In order to provide this library in a way that's clean, ordered, and
+maintainable, sometimes packages define both an interface and some types that
+implement it.
+
+Let's take a small step back though. Let's ignore the types like =io.PipeWriter=
+or =io.LimitedReader= for a moment. In fact, let's pretend like they're not even
+in the package yet; they have yet to be written.
+
+What is left in the =io= package? Well, a bunch of interfaces, and then a bunch of
+methods that use those interfaces to implement behaviours.
+
+For example, =io.Copy= needs two parameters: an =io.Reader= and an =io.Writer=. It
+doesn't care /what/ those types are. One could be a file, the other could be a
+buffer. Maybe they're copying bytes from a network connection to a cache. It
+doesn't matter what the types are, because =io.Copy= doesn't /need/ to care. All it
+cares about is this: "I will copy the bytes from the =io.Reader= to the =io.Writer=
+as quickly and efficiently as possible".
+
+How would =io.Copy= work if every package had it's own definition of what a Reader
+or Writer should look like? How much more complex would the code get? By
+focusing on the /behaviour/ it required from the arguments, =io.Copy= allows lots
+and lots of code to copy bytes from one place to another without having to write
+their own implementation of such a basic concept.
+
+So let's take a step closer, and take a look at =io.Pipe()= and the two types it
+returns, =io.PipeWriter= and =io.PipeReader=. Let's ask a pretty simple question:
+why does =io= have both =io.Pipe()= and =io.Copy(io.Writer, io.Reader)=?
+
+Think about this: how many places would you like to be able to pass in an
+=io.Reader=, and have everything that's read immediately written somewhere
+else?
+
+A good example is sending the output of a command back over a network
+connection:
+
+#+BEGIN_SRC go
+  func handler(w http.ResponseWriter, r *http.Request) {
+    cmd := exec.Command("ls")
+    pipeReader, pipeWriter := io.Pipe()
+    cmd.Stdout = pipeWriter
+    cmd.Stderr = pipeWriter
+    go io.Copy(w, pipeReader)
+    cmd.Run()
+    pipeWriter.Close()
+  }
+
+  func main() {
+    http.HandleFunc("/", handler)
+    http.ListenAndServe(":8080", nil)
+  }
+#+END_SRC
+
+This seems like a trivial example -- and that's because it is. It's hard to see
+how this is valuable; you could just write the handler like so:
+
+#+BEGIN_SRC go
+  func handler(w http.ResponseWriter, r *http.Request){
+    cmd := exec.Command("ls")
+    buf := bytes.NewBuffer(nil)
+    cmd.Stderr = buf
+    cmd.Stdout = buf
+    cmd.Run()
+    io.Copy(w, buf)
+  }
+#+END_SRC
+
+What's the difference between the two? Well, for one =io.Copy= isn't running in a
+goroutine any more. Hooray! We've made the code simpler by getting rid of
+concurrency. However, now we have to wait for the command to finish;
+=bytes.Buffer= can't be told "wait until you've been written to before returning
+=io.EOF= when someone calls =Read= on you". That means the handler would return
+nothing, immediately. So instead we wait for the command to finish.
+
+For something like the output of =ls= that's not a big deal; but what if this
+command generated gigabytes of data we had to send back? We'd rather not have to
+keep all that in memory. Could we do something using goroutines and
+=cmd.Start()/cmd.Wait()= instead of waiting for all the data to be read? Of course
+you could! But now you're on your way to re-writing what's provided by
+=io.Pipe()=, but in a manner specific to this particular problem.
+
+So now we know what was probably the main motivation for providing =io.Pipe()= and
+the two types =io.PipeReader= and =io.PipeWriter=. It provides an incredibly useful
+tool for hooking up a piece of code that writes data and a piece of code that
+reads data so that the reads are piped directly to the writes. Pretty handy!
+
+How else is this useful?
+
+Well, what if our handler looked more like this:
+
+#+BEGIN_SRC go
+  func handler(w http.ResponseWriter, r *http.Request) {
+    read, write := io.Pipe()
+    go complicatedEncoding(w, read)
+    getData(r, write)
+
+    write.Close()
+  }
+#+END_SRC
+
+What does =getData= do? Well, it gets data. But where does it get that data, and how
+much data it get? Can either of those change based on what's in the request? And
+why doesn't it just return an =io.Writer=? And what about =complicatedEncoding=, why
+doesn't it just return an =io.Reader=?
+
+In other words, why not this instead:
+
+#+BEGIN_SRC go
+  func handler(w http.ResponseWriter, r *http.Request) {
+    writer := getData(r)
+    reader := complicatedEncoding(w, writer)
+    io.Copy(w, reader)
+  }
+#+END_SRC
+
+Again, we run into the same issue: we have to wait for all the data to be read
+before we can do anything, meaning it all has to fit in memory.
+
+Also, it's certainly possible to use =io.Copy= for these kinds of operations. However,
+the issue with doing it that way is that it means your code has to return an
+=io.Reader= and an =io.Writer= back to the level where the =io.Copy= is called.
+
+For some code, this isn't an issue. Take this somewhat simple handler for
+reading data from an object in Google Storage ( Google's version of S3 ) and
+sending it to the user:
+
+#+BEGIN_SRC go
+  func handler(w http.ResponseWriter, r *http.Request){
+    bName, oName, err := getBucketAndObject(r)
+    if err != nil {
+      handleError(err)
+      return
+    }
+
+    reader := storage.Bucket(bName).Object(oName).NewReader(r.Context())
+    defer reader.Close()
+
+    buf := make([]byte, bufferSize) // avoid lots of allocations
+    io.CopyBuffer(w, reader)
+  }
+#+END_SRC
+
+#+BEGIN_NOTE
+=io.CopyBuffer= is identical to =io.Copy= except that it allows you to provide the
+byte slice buffer used to do the copying -- passing =nil= makes =io.CopyBuffer=
+perform the same as =io.Copy=.
+#+END_NOTE
+
+However, there are many more cases where the reader and the writer are separated
+by several layers. Requiring the code to read /everything/ and return it before we
+can do anything means we suddenly have to care a great deal about how much data
+we can read before we run out of memory.
+
+All of that to say: the =io= package implements some concrete types such as
+=io.PipeWriter= and =io.PipeReader= to save Go developers from having to write their
+own reader & writer "pipe" type, something that is obviously pretty handy for
+keeping memory usage low.
+
+And that's usually the case when a package in the Go standard library defines
+some interfaces and types that fulfill those interfaces. It's done that way to
+provide Go developers with a standard library with even more handy features that
+save Go developers time.
+
+
 
 **** Stuff To Read & Crib From                                  :noexport:
 https://www.integralist.co.uk/posts/go-interfaces/
@@ -635,5 +832,4 @@ previous call. That is the place where you should spend your efforts, not
 defensively trying to code around a failure to follow proper error handling.
 
 Don’t check for a nil receiver. Employ high test coverage and vet/lint tools to
-spot unhandled error conditions resulting in nil receivers. 
-
+spot unhandled error conditions resulting in nil receivers.

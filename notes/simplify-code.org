@@ -1,0 +1,243 @@
+** Following The Single Responsibility Principle
+Here's some code Hagen wrote for a project in Go a long time ago. It's for a
+GRPC service, which is why you don't see any =http.Request= or =gin.Context= types.
+
+#+BEGIN_SRC go
+// RegisterDevice registers a device given a code
+func (s *Service) RegisterDevice(ctx context.Context, in *event.RegisterDeviceRequest) (*event.RegisterDeviceResponse, error) {
+	if in.Code == "" {
+		return nil, errors.CreateInvalidArgs(ctx, fmt.Errorf("Expected school code, got an empty string"))
+	}
+
+	code := strings.TrimSpace(in.Code)
+	code = strings.ToLower(code)
+
+	var x = school{}
+	fq := sq.Select("id,name").From("schools").Where("lower(code) = ?", code)
+	err := s.db.Get(ctx, &x, fq)
+	if err != nil {
+		if _, ok := err.(*errors.ErrNoRows); ok {
+			iq := sq.Insert("schools").Columns("name, code").Values("unknown", in.Code).
+				Suffix("returning id, name")
+			err = s.db.Get(ctx, &x, iq)
+			if err != nil {
+				if x, ok := err.(*errors.ErrBase); ok {
+					x.AddExtra(map[string]interface{}{"req": in})
+					return nil, x
+				}
+				return nil, err
+			}
+		} else {
+			if x, ok := err.(*errors.ErrBase); ok {
+				x.AddExtra(map[string]interface{}{"req": in})
+				return nil, x
+			}
+			return nil, err
+		}
+	}
+
+	iq := sq.Insert("schools_devices").Columns("school_id, device_id").
+		Values(x.ID, in.DeviceId).
+		Suffix("on conflict (school_id, device_id) do update set registered = ?", true)
+	_, err = s.db.Exec(ctx, iq)
+	if err != nil {
+		if x, ok := err.(errors.PublicError); ok {
+			x.AddExtra(map[string]interface{}{"req": in})
+			return nil, err
+		}
+		return nil, err
+	}
+
+	res := &event.RegisterDeviceResponse{
+		SchoolName: x.Name,
+	}
+
+	return res, nil
+}
+#+END_SRC
+
+Now, to most of us, this probably doesn't seem to bad. However, when Hagen looks
+at it he shudders -- this is not code that follows the Single Responsibility
+principle. So what could we change to make this better?
+
+Well, how many reasons does this handler have to change? As quick as we can,
+here's a few reasons:
+
+ 1. What constitutes a "valid code" changes
+ 2. How the code should be processed before using it
+ 3. The database table changes
+ 4. A decision is made to store the codes in a key-value or NoSQL data store
+ 5. A decision is made to also provide a JSON HTTP endpoint -- or an XML
+    endpoint
+ 6. A decision is made to use a custom wire format, below HTTP
+ 7. A change is made to the business logic on what to do if the school doesn't
+    already exist in the database
+
+That's seven reasons to change that we found in just a few minutes of looking.
+
+How do we improve this?
+
+Maybe something like this:
+
+#+begin_src go
+  // RegisterDevice registers a device given a code
+  func (s *Service) RegisterDevice(ctx context.Context, in *school.RegisterDeviceRequest) (*school.RegisterDeviceResponse, error){
+    data, err := s.ValidateRegisterDevice(in)
+    if err != nil {
+      return nil, err
+    }
+
+    school, err := s.schools.FetchSchool(data)
+    if err != nil {
+      return nil, err
+    }
+
+    result, err := school.RegisterDevice(data)
+    if err != nil {
+      return nil, err
+    }
+
+    return s.BuildRegisterDeviceResponse(result)
+  }
+#+end_src
+
+Would you say this code is clearer? Is it simpler?
+
+Now it's pretty easy to understand what happens when this route is called:
+ 1. Validate the request
+ 2. Fetch the school
+ 3. Register the device at the school
+ 4. Build and return a response
+
+It's also very clear what happens when there's an error: it gets returned!
+
+Give someone any of the following tasks:
+ - do X when a school registers a new device
+ - do A,B, *and* C when validating the request
+ - don't create a school if it doesn't already exist
+
+And it will be _very_ clear where they go to make those changes -- and it's not
+inside this function.
+
+It has also further clarified what the handler does ( register a device ) by
+extracting all the code that hides that purpose. All the code around what to do
+if the school doesn't exist now lives inside whatever =s.schools= is. How to
+register a device ID to a school is hidden inside =school.RegisterDevice=. How to
+turn the result of that operation into our response was extracted into
+=event.BuildRegisterDeviceResponse=.
+
+However, we can refine this further if we want:
+
+#+begin_src go
+  // RegisterDevice registers a device given a code
+  func (s *Service) RegisterDevice(ctx context.Context, in *event.RegisterDeviceRequest) (*event.RegisterDeviceResponse, error){
+    data, err := s.input.ParseRegisterDeviceRequest(in)
+    if err != nil {
+      return nil, err
+    }
+
+    result, err := s.schools.RegisterDeviceToSchool(data)
+    if err != nil {
+      return nil, err
+    }
+
+    return s.output.BuildRegisterDeviceResponse(result)
+  }
+#+end_src
+
+We've now got a function that does just three things:
+ 1. Asks =s.input= to parse the request input
+ 2. Tells =s.schools= to register a new device
+ 3. Asks =s.output= to build a response from the result
+
+Now =*Service.RegisterDevice= should only need to change if some new step needs to
+be added in-between parsing the input and registering a device or between that
+and building the response.
+
+All the logic around finding ( or creating ) a school and how to register the
+device are encapsulated in whatever type -- or more likely: whatever interface --
+we'd find if we looked at where =s.schools= is defined.
+
+So what's the lesson here? We all know that the first version is what we all
+write the first time we implement some new feature or behaviour. However, it's
+probably not what most of us would consider "finished". We'd probably all prefer
+to be working on a code base that looked like our last revision instead of the
+first version.
+
+How do we get there?
+
+Tests!
+
+If we've been writing tests to validate the behaviour of this handler, then we
+can refactor to our hearts content.
+
+While we're not suggesting that you must use TDD, there are some useful
+techniques from TDD that can help us deploy code that looks like our last
+example instead of the first. 
+
+Well, one technique; TDD doesn't really have a ton of different techniques to
+choose from.
+
+And that's....
+
+[[https://camo.githubusercontent.com/e8ff9d17c3829387231401ee9c6694afc8d97f68db68607b65dbb4873016fc73/68747470733a2f2f67626c6f627363646e2e676974626f6f6b2e636f6d2f6173736574732532462d4c3954717835575361694534753234506b30352532462d4c6d79476349775946716c632d6b787a49475a2532462d4c58414a525362746d303270685263467655342532467265642d677265656e2d626c75652d676f70686572732d736d616c6c65722e706e673f616c743d6d65646961]]
+
+Red! Green! Refactor!
+
+You've probably encountered this in the past, but it's worth laying out the
+basics real quick.
+
+Let's do this red-green-refactor thing by going through the process of writing
+our old friend the =Save(io.Writer,*Document)= function.
+
+To start, we write a test:
+
+#+begin_src go
+  func TestSave_OutputsCorrectly(t *teting.T){}
+#+end_src
+
+It may seem silly, but this is an important step. Well, they're all important
+steps -- TDD is a [[https://www.merriam-webster.com/dictionary/discipline][discipline]], which means following some seemingly arbitrary
+rules even if you think they're a bit silly.
+
+What does this first step tell us?
+
+Well, we'll know if the rest of our tests are passing. And we'll also know if we
+messed up -- like how we forgot the =s= in =testing=. So we make the fix, run our
+tests, and the pass!
+
+Why else is this important? Because we know we haven't somehow broken something
+else by writing this test. Which shouldn't be possible, but who knows what some
+developer has done in other tests?
+
+Next up, we gotta make the test fail. Easiest way to do that: call a function we
+haven't defined yet!
+
+#+begin_src go
+  func TestSave_OutputsCorrectly(t *testing.T){
+    Save()
+  }
+#+end_src
+
+What's the purpose of this test? Well, for one it'll let us know if there's
+already a function named =Save=. Pretty handy piece of information, right? If you
+were a new junior on the team who hasn't touched much of the code base yet, this
+step could save you some valuable time.
+
+However, let's assume things progress as we expect them to: the test fails. And
+something to remember is this:
+
+Code that doesn't compile counts as a failing test. Just because =go test= didn't
+print out a nice red *FAIL* for you doesn't mean the test succeeded; if it failed
+to even compile you've got a failing test.
+
+So what's the next step? Get the test to pass, of course.
+
+#+begin_src go
+  func Save() {}
+#+end_src
+
+And our test pass.
+
+
+

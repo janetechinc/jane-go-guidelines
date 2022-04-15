@@ -1,0 +1,179 @@
+** Generics
+Generics are fairly new to Go, having only arrived in Go 1.18 in March 2022.
+
+Since it is such a new feature, there are still plenty of things that are being
+figured out with regards to best practices on how to use them. So this section
+is going to be a bit shorter than the others -- at least until a working body of
+knowledge is built up by the Go community.
+
+So far all these best practices come from [[https://planetscale.com/blog/generics-can-make-your-go-code-slower][a very well researched look into how
+Go deals with generics in a few different situations]] by Vicent Marti.
+
+*** DO NOT Use Interfaces In Arguments To Generic Function
+Because of how generics and interfaces interact, there are a number of things
+that collide in these situations that make the code slower.
+
+For example, these three functions are compared in the article:
+
+#+BEGIN_SRC go
+  // monomorphized
+  func BufEncodeString(buf *strings.Builder, val []byte){
+    //...
+  }
+
+  // iface
+  func BufEncodeStringI(buf io.ByteWriter, val []byte) {
+    //...
+  }
+
+  // generic
+  func BufEncodeStringGI[W io.ByteWriter](buf W, val []byte) {
+    //...
+  }
+#+END_SRC
+
+In all three functions the first argument is =*strings.Builder=.
+
+The third version, =BufEncodeStringGI=, has to dereference the pointer twice in
+order to get to the actual value. If you look at the benchmarks it might not
+seem like a big deal:
+
+| name              | time/op     | alloc/op    | allocs/op |
+| Monomorphized-16  | 5.06µs ± 1% | 2.56kB ± 0% | 2.00 ± 0% |
+| Iface-16          | 6.85µs ± 1% | 2.59kB ± 0% | 3.00 ± 0% |
+| GenericWithPtr-16 | 7.18µs ± 2% | 2.59kB ± 0% | 3.00 ± 0% |
+
+1 extra microsecond. Not that big a deal, right?
+
+From the article:
+
+#+BEGIN_QUOTE
+These micro-benchmarks are being ran on a vacuum, where the =itab= and
+dictionaries for the generic function are always warm in cache, and the global
+=itabTable= that enables =assertI2I= is *empty and uncontended*. In an actual
+production service there is cache contention, and the global itabTable can
+contain from hundreds to millions of entries, depending on how long your service
+has been running and the amount of unique type/interface pairs in your compiled
+code. *This means that Generic method call overhead in your Go programs will
+degrade with the complexity of your codebase*.
+#+END_QUOTE
+
+In plain English: this means is that by having functions that work on core,
+concrete details should either accept an interface or be generic, but not
+both. And if possible, don't use either; even with generics there may be places
+we want two versions of a function to take advantage of compiler optimizations
+that might not happen with interfaces or generics.
+
+*** FOR NOW, Don't Rewrite APIs That Use Interfaces To Use Generics
+From the article:
+
+#+BEGIN_QUOTE
+Given the current constraints of the implementation, any code that currently
+uses non-empty interfaces will behave more predictably, and will be simpler, if
+it continues using interfaces. When it comes to method calls, Generics devolve
+pointers into twice-indirect interfaces, and interfaces into… well, something
+quite horrifying, if I’m being honest.
+#+END_QUOTE
+
+*** Use Generics On Functions That Take =string= or =[]byte=
+
+#+BEGIN_QUOTE
+There’s a very common and recurring pattern in Go codebases, which can even be
+seen throughout the standard library, where a function that takes a =[]byte= slice
+as its argument will also have an identical equivalent that takes an =string=
+instead.
+
+We can find this pattern all over the place (e.g. =(*Buffer).Write= vs
+=(*Buffer).WriteString=), but the =encoding/utf8= package really is a shining
+example of where this starts becoming an issue: roughly 50% of its API surface
+are duplicated methods that have been manually monomorphized to support both
+=[]byte= and =string=.
+
+| Bytes          | String                 |
+|----------------+------------------------|
+| =DecodeLastRune= | =DecodeLastRuneInString= |
+| =DecodeRune=     | =DecodeRuneInString=     |
+| =FullRune=       | =FullRuneInString=       |
+| =RuneCount=      | =RuneCountInString=      |
+| =Valid=          | =ValidString=            |
+
+It’s worth pointing out that this duplication is, in fact, a performance
+optimization: the API could very well provide only =[]byte= functions to operate
+on UTF8 data, forcing the users to convert their =string= inputs to =[]byte= before
+calling into the package. This would not be particularly un-ergonomic, but it
+would be very expensive. Since byte slices in Go are mutable and =strings= are
+not, converting between them in either direction always forces an allocation.
+#+END_QUOTE
+
+#+BEGIN_QUOTE
+...the =[]byte | string= constraint can be used in Go generics to reduce code
+duplication in functions that process byte sequences without introducing any
+extra overhead
+#+END_QUOTE
+
+This all gets shown quite well in the performance benchmark results Marti
+shares:
+
+| name                            | type/op     |
+| Valid/Japanese/Bytes-16         | 2.63µs ± 2% |
+| Valid/Japanese/GenericBytes-16  | 2.67µs ± 1% |
+| Valid/Japanese/String-16        | 2.48µs ± 2% |
+| Valid/Japanese/GenericString-16 | 2.53µs ± 0% |
+| Valid/ASCII/Bytes-16            | 937ns ± 1%  |
+| Valid/ASCII/GenericBytes-16     | 943ns ± 1%  |
+| Valid/ASCII/String-16           | 930ns ± 3%  |
+| Valid/ASCII/GenericString-16    | 811ns ± 2%  |
+
+Pretty handy!
+
+*** Use Generics In Data Structures
+Any places that had data structures that made heavy use of =interface{}/any= can
+and should probably be re-written to use generics.
+
+From the article:
+
+#+BEGIN_QUOTE
+This is by far their best use case: Generic data structures that were previously
+implemented using =interface{}= are complex and un-ergonomic. Removing the type
+assertions and storing types *unboxed* in a type-safe way makes these data
+structures both easier to use and more performant.
+#+END_QUOTE
+
+At the very least, replacing a potential run-time panic with a compile-time
+failure seems like a good thing to take advantage of.
+
+*** Try To Use Generics For Callback Functions
+This is specifically talking about this usage of generics:
+
+#+BEGIN_SRC go
+  func ForEachRune[F func(rune)](p []byte, each F) {
+    //                 ^ function type as constraint
+#+END_SRC
+
+The article goes into more detail, but what the article goes into detail on is
+the fact that using
+
+#+BEGIN_SRC go
+  func MapAny[I any](a []I, callback func(I) I) []I {
+#+END_SRC
+
+Is worse than using:
+
+#+BEGIN_SRC go
+func MapAny[I any, F func(I) I](a []I, callback F) []I {
+#+END_SRC
+
+Because the Go compiler can actually figure out if the callback passed into the
+second version can be [[https://dave.cheney.net/2020/04/25/inlining-optimisations-in-go][inlined]] and vastly improve the performance of our
+code. And the best part is this: if the function can't be inlined it doesn't
+impact the performance!
+
+In other words, these two functions should both be optimized in the same fashion
+by the Go compiler -- it will inline the functions that can be inlined, and
+leave the ones that can't be inlined alone. Neat!
+
+#+BEGIN_SRC go
+  func MapInt(a []int, func(int) int) []int
+
+  func MapAny[I any, F func(I) I](a []I, callback F) []I
+#+END_SRC
