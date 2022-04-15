@@ -1,0 +1,75 @@
+
+** Various Other Language Features
+There are a few other language features we should touch on before moving on.
+
+*** Switch Statements
+The =switch= statement in Go works fairly similarly to how it works in other
+languages. It does have one small difference though; in Go the default is to
+only execute the matching =case=. If you want Go to execute each successive =case=
+you need to end the =case= with the keyword =fallthrough=.
+
+Here's an example:
+
+#+begin_src go
+  switch (anIntegerValue) {
+  case 1:
+    fmt.Println("it's a one, the loneliest number")
+    fallthrough
+  case 2:
+    fmt.Println("two!")
+    fallthrough
+  default:
+    fmt.Println("I can't count higher than 2")
+  }
+#+end_src
+
+Go even has a special version of the =switch= known as the "type switch". Check
+out this example from [[https://go.dev/tour/methods/16][the type switch page on the Tour of Go]]:
+
+#+begin_src go :results output :wrap src txt :exports both
+package main
+
+import "fmt"
+
+func do(i interface{}) {
+	switch v := i.(type) {
+	case int:
+		fmt.Printf("Twice %v is %v\n", v, v*2)
+	case string:
+		fmt.Printf("%q is %v bytes long\n", v, len(v))
+	default:
+		fmt.Printf("I don't know about type %T!\n", v)
+	}
+}
+
+func main() {
+	do(21)
+	do("hello")
+	do(true)
+}
+#+end_src
+
+#+RESULTS:
+#+begin_src txt
+Twice 21 is 42
+"hello" is 5 bytes long
+I don't know about type bool!
+#+end_src
+
+However, =switch= statements have some issues -- specifically in relation to our
+principles.
+
+First, =switch=-es have a tendency to become very complex and hard to parse by
+developers. This is a problem with =switch= statements in general, it's not
+specific to Go. One way to get around this problem is ensuring that the only
+thing inside each case statement is a single function call.
+
+A second thing that contributes to the complexity of =switch= statements is the
+=fallthrough= keyword. In Go only the matching =case= statement is executed, unlike
+other languages that require the =break= keyword to prevent the code from
+executing every following =case= statement. Regardless, =fallthrough= makes =switch=
+statements even hard to understand. So a good rule of thumb here is that either
+/all/ the =case= statements use =fallthrough=, or /none/ of them do.
+
+
+

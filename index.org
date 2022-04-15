@@ -49,6 +49,7 @@ should be able to help us catch and fix.
 #+INCLUDE: "arch/concurrency.org"
 #+INCLUDE: "arch/logging.org"
 #+INCLUDE: "arch/generics.org"
+#+INCLUDE: "arch/misc.org"
 
 * Architecture
 This section we're going to be diving into the most prescriptive set of
