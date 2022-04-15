@@ -1,7 +1,10 @@
-** Packages Defining Interfaces
-We talked about
 
-There are, of course, some caveats to where
+** Packages Defining Interfaces
+We talked about where to define an interface in a previous section. Because we
+use interfaces to define what behaviour a function or class requires, interfaces
+should be defined within the package where they're used.
+
+There are, of course, some caveats to this rule.
 
 A good example is the =Reader= interface provided by the =io= package:
 
@@ -66,7 +69,7 @@ Think about how easy it is to compose all those cases because of how ubiquitous
 #+END_SRC
 
 Now, what if each of those had it's own unique reader? How do you transform a
-==http.Request#Body= into something =zip.Decompressor= can accept? How do you turn /that/
+=http.Request#Body= into something =zip.Decompressor= can accept? How do you turn /that/
 into something =webp.DecodeConfig= can accept?
 
 By standardizing on the use of =io.Reader= as how bytes are read, it opens up
@@ -76,3 +79,4 @@ An alternative way to think about this is that many packages /might have had/
 their own interfaces that looked like or performed the same function as
 =io.Reader= -- and the Go team standardized on =io.Reader= as *the* interface defining
 how to read bytes, and put it in the =io= package.
+

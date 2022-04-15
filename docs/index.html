@@ -132,10 +132,11 @@
 <li><a href="#apendixes"><span class="toc-section-number">6</span> Apendixes</a>
 <ul>
 <li><a href="#error-handling-too-many-behaviours"><span class="toc-section-number">6.1</span> Error Handling: Too Many Behaviours</a></li>
-<li><a href="#packages-defining-interfaces"><span class="toc-section-number">6.2</span> Packages Defining Interfaces</a></li>
-<li><a href="#why-is-io.reader-an-example-of-great-interface-design"><span class="toc-section-number">6.3</span> Why is <code class="verbatim">io.Reader</code> an example of great interface design?</a></li>
-<li><a href="#api-design-google-vs-amazon"><span class="toc-section-number">6.4</span> API Design, Google vs Amazon</a></li>
-<li><a href="#tips-tricks-gotchas"><span class="toc-section-number">6.5</span> Tips, Tricks, &amp; Gotchas</a></li>
+<li><a href="#following-the-single-responsibility-principle"><span class="toc-section-number">6.2</span> Following The Single Responsibility Principle</a></li>
+<li><a href="#packages-defining-interfaces"><span class="toc-section-number">6.3</span> Packages Defining Interfaces</a></li>
+<li><a href="#why-is-io.reader-an-example-of-great-interface-design"><span class="toc-section-number">6.4</span> Why is <code class="verbatim">io.Reader</code> an example of great interface design?</a></li>
+<li><a href="#api-design-google-vs-amazon"><span class="toc-section-number">6.5</span> API Design, Google vs Amazon</a></li>
+<li><a href="#tips-tricks-gotchas"><span class="toc-section-number">6.6</span> Tips, Tricks, &amp; Gotchas</a></li>
 </ul></li>
 <li><a href="#sources"><span class="toc-section-number">7</span> Sources</a>
 <ul>
@@ -3811,14 +3812,207 @@ exiting!
 <p>Reading data, processing it, and writing it is small enough to be a single responsibility – so long as you're using interfaces that limit your function to <em>just that behaviour</em>.</p>
 </div>
 </section>
-<section id="packages-defining-interfaces" class="level2" data-number="6.2">
-<h2 data-number="6.2"><span class="header-section-number">6.2</span> Packages Defining Interfaces</h2>
-<p>We talked about</p>
-<p>There are, of course, some caveats to where</p>
+<section id="following-the-single-responsibility-principle" class="level2" data-number="6.2">
+<h2 data-number="6.2"><span class="header-section-number">6.2</span> Following The Single Responsibility Principle</h2>
+<p>Here's some code Hagen wrote for a project in Go a long time ago. It's for a GRPC service, which is why you don't see any <code class="verbatim">http.Request</code> or <code class="verbatim">gin.Context</code> types.</p>
+<div class="sourceCode" id="cb200"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb200-1"><a href="#cb200-1" aria-hidden="true" tabindex="-1"></a><span class="co">// RegisterDevice registers a device given a code</span></span>
+<span id="cb200-2"><a href="#cb200-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>s <span class="op">*</span>Service<span class="op">)</span> RegisterDevice<span class="op">(</span>ctx context<span class="op">.</span>Context<span class="op">,</span> in <span class="op">*</span>event<span class="op">.</span>RegisterDeviceRequest<span class="op">)</span> <span class="op">(*</span>event<span class="op">.</span>RegisterDeviceResponse<span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb200-3"><a href="#cb200-3" aria-hidden="true" tabindex="-1"></a> <span class="kw">if</span> in<span class="op">.</span>Code <span class="op">==</span> <span class="st">&quot;&quot;</span> <span class="op">{</span></span>
+<span id="cb200-4"><a href="#cb200-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> errors<span class="op">.</span>CreateInvalidArgs<span class="op">(</span>ctx<span class="op">,</span> fmt<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;Expected school code, got an empty string&quot;</span><span class="op">))</span></span>
+<span id="cb200-5"><a href="#cb200-5" aria-hidden="true" tabindex="-1"></a> <span class="op">}</span></span>
+<span id="cb200-6"><a href="#cb200-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb200-7"><a href="#cb200-7" aria-hidden="true" tabindex="-1"></a> code <span class="op">:=</span> strings<span class="op">.</span>TrimSpace<span class="op">(</span>in<span class="op">.</span>Code<span class="op">)</span></span>
+<span id="cb200-8"><a href="#cb200-8" aria-hidden="true" tabindex="-1"></a> code <span class="op">=</span> strings<span class="op">.</span>ToLower<span class="op">(</span>code<span class="op">)</span></span>
+<span id="cb200-9"><a href="#cb200-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb200-10"><a href="#cb200-10" aria-hidden="true" tabindex="-1"></a> <span class="kw">var</span> x <span class="op">=</span> school<span class="op">{}</span></span>
+<span id="cb200-11"><a href="#cb200-11" aria-hidden="true" tabindex="-1"></a> fq <span class="op">:=</span> sq<span class="op">.</span>Select<span class="op">(</span><span class="st">&quot;id,name&quot;</span><span class="op">).</span>From<span class="op">(</span><span class="st">&quot;schools&quot;</span><span class="op">).</span>Where<span class="op">(</span><span class="st">&quot;lower(code) = ?&quot;</span><span class="op">,</span> code<span class="op">)</span></span>
+<span id="cb200-12"><a href="#cb200-12" aria-hidden="true" tabindex="-1"></a> err <span class="op">:=</span> s<span class="op">.</span>db<span class="op">.</span>Get<span class="op">(</span>ctx<span class="op">,</span> <span class="op">&amp;</span>x<span class="op">,</span> fq<span class="op">)</span></span>
+<span id="cb200-13"><a href="#cb200-13" aria-hidden="true" tabindex="-1"></a> <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb200-14"><a href="#cb200-14" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> _<span class="op">,</span> ok <span class="op">:=</span> err<span class="op">.(*</span>errors<span class="op">.</span>ErrNoRows<span class="op">);</span> ok <span class="op">{</span></span>
+<span id="cb200-15"><a href="#cb200-15" aria-hidden="true" tabindex="-1"></a>   iq <span class="op">:=</span> sq<span class="op">.</span>Insert<span class="op">(</span><span class="st">&quot;schools&quot;</span><span class="op">).</span>Columns<span class="op">(</span><span class="st">&quot;name, code&quot;</span><span class="op">).</span>Values<span class="op">(</span><span class="st">&quot;unknown&quot;</span><span class="op">,</span> in<span class="op">.</span>Code<span class="op">).</span></span>
+<span id="cb200-16"><a href="#cb200-16" aria-hidden="true" tabindex="-1"></a>    Suffix<span class="op">(</span><span class="st">&quot;returning id, name&quot;</span><span class="op">)</span></span>
+<span id="cb200-17"><a href="#cb200-17" aria-hidden="true" tabindex="-1"></a>   err <span class="op">=</span> s<span class="op">.</span>db<span class="op">.</span>Get<span class="op">(</span>ctx<span class="op">,</span> <span class="op">&amp;</span>x<span class="op">,</span> iq<span class="op">)</span></span>
+<span id="cb200-18"><a href="#cb200-18" aria-hidden="true" tabindex="-1"></a>   <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb200-19"><a href="#cb200-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> x<span class="op">,</span> ok <span class="op">:=</span> err<span class="op">.(*</span>errors<span class="op">.</span>ErrBase<span class="op">);</span> ok <span class="op">{</span></span>
+<span id="cb200-20"><a href="#cb200-20" aria-hidden="true" tabindex="-1"></a>     x<span class="op">.</span>AddExtra<span class="op">(</span><span class="kw">map</span><span class="op">[</span><span class="dt">string</span><span class="op">]</span><span class="kw">interface</span><span class="op">{}{</span><span class="st">&quot;req&quot;</span><span class="op">:</span> in<span class="op">})</span></span>
+<span id="cb200-21"><a href="#cb200-21" aria-hidden="true" tabindex="-1"></a>     <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> x</span>
+<span id="cb200-22"><a href="#cb200-22" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb200-23"><a href="#cb200-23" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb200-24"><a href="#cb200-24" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb200-25"><a href="#cb200-25" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span id="cb200-26"><a href="#cb200-26" aria-hidden="true" tabindex="-1"></a>   <span class="kw">if</span> x<span class="op">,</span> ok <span class="op">:=</span> err<span class="op">.(*</span>errors<span class="op">.</span>ErrBase<span class="op">);</span> ok <span class="op">{</span></span>
+<span id="cb200-27"><a href="#cb200-27" aria-hidden="true" tabindex="-1"></a>    x<span class="op">.</span>AddExtra<span class="op">(</span><span class="kw">map</span><span class="op">[</span><span class="dt">string</span><span class="op">]</span><span class="kw">interface</span><span class="op">{}{</span><span class="st">&quot;req&quot;</span><span class="op">:</span> in<span class="op">})</span></span>
+<span id="cb200-28"><a href="#cb200-28" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> x</span>
+<span id="cb200-29"><a href="#cb200-29" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb200-30"><a href="#cb200-30" aria-hidden="true" tabindex="-1"></a>   <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb200-31"><a href="#cb200-31" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb200-32"><a href="#cb200-32" aria-hidden="true" tabindex="-1"></a> <span class="op">}</span></span>
+<span id="cb200-33"><a href="#cb200-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb200-34"><a href="#cb200-34" aria-hidden="true" tabindex="-1"></a> iq <span class="op">:=</span> sq<span class="op">.</span>Insert<span class="op">(</span><span class="st">&quot;schools_devices&quot;</span><span class="op">).</span>Columns<span class="op">(</span><span class="st">&quot;school_id, device_id&quot;</span><span class="op">).</span></span>
+<span id="cb200-35"><a href="#cb200-35" aria-hidden="true" tabindex="-1"></a>  Values<span class="op">(</span>x<span class="op">.</span>ID<span class="op">,</span> in<span class="op">.</span>DeviceId<span class="op">).</span></span>
+<span id="cb200-36"><a href="#cb200-36" aria-hidden="true" tabindex="-1"></a>  Suffix<span class="op">(</span><span class="st">&quot;on conflict (school_id, device_id) do update set registered = ?&quot;</span><span class="op">,</span> <span class="ot">true</span><span class="op">)</span></span>
+<span id="cb200-37"><a href="#cb200-37" aria-hidden="true" tabindex="-1"></a> _<span class="op">,</span> err <span class="op">=</span> s<span class="op">.</span>db<span class="op">.</span>Exec<span class="op">(</span>ctx<span class="op">,</span> iq<span class="op">)</span></span>
+<span id="cb200-38"><a href="#cb200-38" aria-hidden="true" tabindex="-1"></a> <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb200-39"><a href="#cb200-39" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> x<span class="op">,</span> ok <span class="op">:=</span> err<span class="op">.(</span>errors<span class="op">.</span>PublicError<span class="op">);</span> ok <span class="op">{</span></span>
+<span id="cb200-40"><a href="#cb200-40" aria-hidden="true" tabindex="-1"></a>   x<span class="op">.</span>AddExtra<span class="op">(</span><span class="kw">map</span><span class="op">[</span><span class="dt">string</span><span class="op">]</span><span class="kw">interface</span><span class="op">{}{</span><span class="st">&quot;req&quot;</span><span class="op">:</span> in<span class="op">})</span></span>
+<span id="cb200-41"><a href="#cb200-41" aria-hidden="true" tabindex="-1"></a>   <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb200-42"><a href="#cb200-42" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb200-43"><a href="#cb200-43" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb200-44"><a href="#cb200-44" aria-hidden="true" tabindex="-1"></a> <span class="op">}</span></span>
+<span id="cb200-45"><a href="#cb200-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb200-46"><a href="#cb200-46" aria-hidden="true" tabindex="-1"></a> res <span class="op">:=</span> <span class="op">&amp;</span>event<span class="op">.</span>RegisterDeviceResponse<span class="op">{</span></span>
+<span id="cb200-47"><a href="#cb200-47" aria-hidden="true" tabindex="-1"></a>  SchoolName<span class="op">:</span> x<span class="op">.</span>Name<span class="op">,</span></span>
+<span id="cb200-48"><a href="#cb200-48" aria-hidden="true" tabindex="-1"></a> <span class="op">}</span></span>
+<span id="cb200-49"><a href="#cb200-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb200-50"><a href="#cb200-50" aria-hidden="true" tabindex="-1"></a> <span class="kw">return</span> res<span class="op">,</span> <span class="ot">nil</span></span>
+<span id="cb200-51"><a href="#cb200-51" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Now, to most of us, this probably doesn't seem to bad. However, when Hagen looks at it he shudders – this is not code that follows the Single Responsibility principle. So what could we change to make this better?</p>
+<p>Well, how many reasons does this handler have to change? As quick as we can, here's a few reasons:</p>
+<ol>
+<li>What constitutes a "valid code" changes</li>
+<li>How the code should be processed before using it</li>
+<li>The database table changes</li>
+<li>A decision is made to store the codes in a key-value or NoSQL data store</li>
+<li>A decision is made to also provide a JSON HTTP endpoint – or an XML endpoint</li>
+<li>A decision is made to use a custom wire format, below HTTP</li>
+<li>A change is made to the business logic on what to do if the school doesn't already exist in the database</li>
+</ol>
+<p>That's seven reasons to change that we found in just a few minutes of looking.</p>
+<p>How do we improve this?</p>
+<p>Maybe something like this:</p>
+<div class="sourceCode" id="cb201"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb201-1"><a href="#cb201-1" aria-hidden="true" tabindex="-1"></a><span class="co">// RegisterDevice registers a device given a code</span></span>
+<span id="cb201-2"><a href="#cb201-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>s <span class="op">*</span>Service<span class="op">)</span> RegisterDevice<span class="op">(</span>ctx context<span class="op">.</span>Context<span class="op">,</span> in <span class="op">*</span>school<span class="op">.</span>RegisterDeviceRequest<span class="op">)</span> <span class="op">(*</span>school<span class="op">.</span>RegisterDeviceResponse<span class="op">,</span> <span class="dt">error</span><span class="op">){</span></span>
+<span id="cb201-3"><a href="#cb201-3" aria-hidden="true" tabindex="-1"></a>  data<span class="op">,</span> err <span class="op">:=</span> s<span class="op">.</span>ValidateRegisterDevice<span class="op">(</span>in<span class="op">)</span></span>
+<span id="cb201-4"><a href="#cb201-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb201-5"><a href="#cb201-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb201-6"><a href="#cb201-6" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb201-7"><a href="#cb201-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb201-8"><a href="#cb201-8" aria-hidden="true" tabindex="-1"></a>  school<span class="op">,</span> err <span class="op">:=</span> s<span class="op">.</span>schools<span class="op">.</span>FetchSchool<span class="op">(</span>data<span class="op">)</span></span>
+<span id="cb201-9"><a href="#cb201-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb201-10"><a href="#cb201-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb201-11"><a href="#cb201-11" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb201-12"><a href="#cb201-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb201-13"><a href="#cb201-13" aria-hidden="true" tabindex="-1"></a>  result<span class="op">,</span> err <span class="op">:=</span> school<span class="op">.</span>RegisterDevice<span class="op">(</span>data<span class="op">)</span></span>
+<span id="cb201-14"><a href="#cb201-14" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb201-15"><a href="#cb201-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb201-16"><a href="#cb201-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb201-17"><a href="#cb201-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb201-18"><a href="#cb201-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> s<span class="op">.</span>BuildRegisterDeviceResponse<span class="op">(</span>result<span class="op">)</span></span>
+<span id="cb201-19"><a href="#cb201-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Would you say this code is clearer? Is it simpler?</p>
+<p>Now it's pretty easy to understand what happens when this route is called:</p>
+<ol>
+<li>Validate the request</li>
+<li>Fetch the school</li>
+<li>Register the device at the school</li>
+<li>Build and return a response</li>
+</ol>
+<p>It's also very clear what happens when there's an error: it gets returned!</p>
+<p>Give someone any of the following tasks:</p>
+<ul>
+<li>do X when a school registers a new device</li>
+<li>do A,B, <strong>and</strong> C when validating the request</li>
+<li>don't create a school if it doesn't already exist</li>
+</ul>
+<p>And it will be <u>very</u> clear where they go to make those changes – and it's not inside this function.</p>
+<p>It has also further clarified what the handler does ( register a device ) by extracting all the code that hides that purpose. All the code around what to do if the school doesn't exist now lives inside whatever <code class="verbatim">s.schools</code> is. How to register a device ID to a school is hidden inside <code class="verbatim">school.RegisterDevice</code>. How to turn the result of that operation into our response was extracted into <code class="verbatim">event.BuildRegisterDeviceResponse</code>.</p>
+<p>However, we can refine this further if we want:</p>
+<div class="sourceCode" id="cb202"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb202-1"><a href="#cb202-1" aria-hidden="true" tabindex="-1"></a><span class="co">// RegisterDevice registers a device given a code</span></span>
+<span id="cb202-2"><a href="#cb202-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>s <span class="op">*</span>Service<span class="op">)</span> RegisterDevice<span class="op">(</span>ctx context<span class="op">.</span>Context<span class="op">,</span> in <span class="op">*</span>event<span class="op">.</span>RegisterDeviceRequest<span class="op">)</span> <span class="op">(*</span>event<span class="op">.</span>RegisterDeviceResponse<span class="op">,</span> <span class="dt">error</span><span class="op">){</span></span>
+<span id="cb202-3"><a href="#cb202-3" aria-hidden="true" tabindex="-1"></a>  data<span class="op">,</span> err <span class="op">:=</span> s<span class="op">.</span>input<span class="op">.</span>ParseRegisterDeviceRequest<span class="op">(</span>in<span class="op">)</span></span>
+<span id="cb202-4"><a href="#cb202-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb202-5"><a href="#cb202-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb202-6"><a href="#cb202-6" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb202-7"><a href="#cb202-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb202-8"><a href="#cb202-8" aria-hidden="true" tabindex="-1"></a>  result<span class="op">,</span> err <span class="op">:=</span> s<span class="op">.</span>schools<span class="op">.</span>RegisterDeviceToSchool<span class="op">(</span>data<span class="op">)</span></span>
+<span id="cb202-9"><a href="#cb202-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb202-10"><a href="#cb202-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> err</span>
+<span id="cb202-11"><a href="#cb202-11" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb202-12"><a href="#cb202-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb202-13"><a href="#cb202-13" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> s<span class="op">.</span>output<span class="op">.</span>BuildRegisterDeviceResponse<span class="op">(</span>result<span class="op">)</span></span>
+<span id="cb202-14"><a href="#cb202-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>We've now got a function that does just three things:</p>
+<ol>
+<li>Asks <code class="verbatim">s.input</code> to parse the request input</li>
+<li>Tells <code class="verbatim">s.schools</code> to register a new device</li>
+<li>Asks <code class="verbatim">s.output</code> to build a response from the result</li>
+</ol>
+<p>Now <code class="verbatim">*Service.RegisterDevice</code> should only need to change if some new step needs to be added in-between parsing the input and registering a device or between that and building the response.</p>
+<p>All the logic around finding ( or creating ) a school and how to register the device are encapsulated in whatever type – or more likely: whatever interface – we'd find if we looked at where <code class="verbatim">s.schools</code> is defined.</p>
+<p>So what's the lesson here? We all know that the first version is what we all write the first time we implement some new feature or behaviour. However, it's probably not what most of us would consider "finished". We'd probably all prefer to be working on a code base that looked like our last revision instead of the first version.</p>
+<p>How do we get there?</p>
+<section id="tests" class="level3" data-number="6.2.1">
+<h3 data-number="6.2.1"><span class="header-section-number">6.2.1</span> Tests!</h3>
+<p>If we've been writing tests to validate the behaviour of this handler, then we can refactor to our hearts content.</p>
+<p>While we're not suggesting that you must use TDD, there are some useful techniques from TDD that can help us deploy code that looks like our last example instead of the first.</p>
+<p>Well, one technique; TDD doesn't really have a ton of different techniques to choose from.</p>
+<p>And that's….</p>
+<p><img src="/assets/red-green-refactor.png" /> <a href="https://quii.gitbook.io/learn-go-with-tests/">Source</a></p>
+<p>Red! Green! Refactor!</p>
+<p>You've probably encountered this in the past, but it's worth laying out the basics real quick.</p>
+<p>Let's do this red-green-refactor thing by going through the process of writing our old friend the <code class="verbatim">Save(io.Writer,*Document)</code> function.</p>
+<p>To start, we write a test:</p>
+<div class="sourceCode" id="cb203"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb203-1"><a href="#cb203-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> TestSave_OutputsCorrectly<span class="op">(</span>t <span class="op">*</span>teting<span class="op">.</span>T<span class="op">){}</span></span></code></pre></div>
+<p>It may seem silly, but this is an important step. Well, they're all important steps – TDD is a <a href="https://www.merriam-webster.com/dictionary/discipline">discipline</a>, which means following some seemingly arbitrary rules even if you think they're a bit silly.</p>
+<p>What does this first step tell us?</p>
+<p>Well, we'll know if the rest of our tests are passing. And we'll also know if we messed up – like how we forgot the <code class="verbatim">s</code> in <code class="verbatim">testing</code>. So we make the fix, run our tests, and the pass!</p>
+<p>Why else is this important? Because we know we haven't somehow broken something else by writing this test. Which shouldn't be possible, but who knows what some developer has done in other tests?</p>
+<p>Next up, we gotta make the test fail. Easiest way to do that: call a function we haven't defined yet!</p>
+<div class="sourceCode" id="cb204"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb204-1"><a href="#cb204-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> TestSave_OutputsCorrectly<span class="op">(</span>t <span class="op">*</span>testing<span class="op">.</span>T<span class="op">){</span></span>
+<span id="cb204-2"><a href="#cb204-2" aria-hidden="true" tabindex="-1"></a>  Save<span class="op">()</span></span>
+<span id="cb204-3"><a href="#cb204-3" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>What's the purpose of this test? Well, for one it'll let us know if there's already a function named <code class="verbatim">Save</code>. Pretty handy piece of information, right? If you were a new junior on the team who hasn't touched much of the code base yet, this step could save you some valuable time.</p>
+<p>However, let's assume things progress as we expect them to: the test fails. And something to remember is this:</p>
+<p>Code that doesn't compile counts as a failing test. Just because <code class="verbatim">go test</code> didn't print out a nice red <strong>FAIL</strong> for you doesn't mean the test succeeded; if it failed to even compile you've got a failing test.</p>
+<p>So what's the next step? Get the test to pass, of course.</p>
+<div class="sourceCode" id="cb205"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb205-1"><a href="#cb205-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Save<span class="op">()</span> <span class="op">{}</span></span></code></pre></div>
+<p>And our test pass.</p>
+<p>You're probably pretty frustrated by the thought of writing code this way. Why not just write the <code class="verbatim">Save</code> implementation? Why not barrel ahead, and write the code we've already got in our head?</p>
+</section>
+<section id="discipline-discipline-discipline" class="level3" data-number="6.2.2">
+<h3 data-number="6.2.2"><span class="header-section-number">6.2.2</span> Discipline, Discipline, Discipline</h3>
+<p>Because TDD is a discipline, one of several disciplines we should be trying to follow so that we can more easily write code that follows our principles.</p>
+<p>So maybe we can change how we think about this red-green-refactor process so that it doesn't feel so tedious.</p>
+<p>Well, we already know in our head what we want to write next. You've probably got some ideas in your head what then next steps would be; a pretty clear next step is the arguments that <code class="verbatim">Save</code> takes, and what it returns.</p>
+<p>How about this then. Don't think tests as something you write so you can move onto the fun part: writing code. Instead, think of tests as the thing you write that <em>forces</em> you to write the code you were already planning to write anyways. This way we get into a positive feedback loop: think about what we want to do next; write a test that forces us to write the smallest version of what we planed to write; then to actually write the code to pass the test.</p>
+<p>So the next update to our test could look like this:</p>
+<div class="sourceCode" id="cb206"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb206-1"><a href="#cb206-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> TestSave_OutputsCorrectly<span class="op">(</span>t <span class="op">*</span>testing<span class="op">.</span>T<span class="op">){</span></span>
+<span id="cb206-2"><a href="#cb206-2" aria-hidden="true" tabindex="-1"></a>  buf <span class="op">:=</span> bytes<span class="op">.</span>NewBuffer<span class="op">(</span><span class="ot">nil</span><span class="op">)</span></span>
+<span id="cb206-3"><a href="#cb206-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">var</span> d <span class="op">*</span>Document</span>
+<span id="cb206-4"><a href="#cb206-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">var</span> err <span class="dt">error</span> <span class="op">=</span> Save<span class="op">(</span>buf<span class="op">,</span>d<span class="op">)</span></span>
+<span id="cb206-5"><a href="#cb206-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb206-6"><a href="#cb206-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb206-7"><a href="#cb206-7" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;got error &#39;%v&#39;, expected nil error&quot;</span><span class="op">)</span></span>
+<span id="cb206-8"><a href="#cb206-8" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb206-9"><a href="#cb206-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>At this point we can now implement most of the functionality of the <code class="verbatim">Save</code> function in order to get the test to pass.</p>
+<p>Furthermore, we can even use what was written to the buffer to test that <code class="verbatim">Save</code> is behaving correctly:</p>
+<div class="sourceCode" id="cb207"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb207-1"><a href="#cb207-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> TestSave_OutputsCorrectly<span class="op">(</span>t <span class="op">*</span>testing<span class="op">.</span>T<span class="op">){</span></span>
+<span id="cb207-2"><a href="#cb207-2" aria-hidden="true" tabindex="-1"></a>  expect <span class="op">:=</span> loadDataFixture<span class="op">(</span>t<span class="op">,</span> <span class="st">&quot;testdata/expected-save-output&quot;</span><span class="op">)</span></span>
+<span id="cb207-3"><a href="#cb207-3" aria-hidden="true" tabindex="-1"></a>  buf <span class="op">:=</span> bytes<span class="op">.</span>NewBuffer<span class="op">(</span><span class="ot">nil</span><span class="op">)</span></span>
+<span id="cb207-4"><a href="#cb207-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">var</span> d <span class="op">*</span>Document</span>
+<span id="cb207-5"><a href="#cb207-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-6"><a href="#cb207-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">var</span> err <span class="dt">error</span> <span class="op">=</span> Save<span class="op">(</span>buf<span class="op">,</span>d<span class="op">)</span></span>
+<span id="cb207-7"><a href="#cb207-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb207-8"><a href="#cb207-8" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;got error &#39;%v&#39;, expected nil error&quot;</span><span class="op">)</span></span>
+<span id="cb207-9"><a href="#cb207-9" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb207-10"><a href="#cb207-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-11"><a href="#cb207-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">//https://pkg.go.dev/github.com/stretchr/testify@v1.7.1/require#JSONEq</span></span>
+<span id="cb207-12"><a href="#cb207-12" aria-hidden="true" tabindex="-1"></a>  require<span class="op">.</span>JSONEq<span class="op">(</span>t<span class="op">,</span> expect<span class="op">,</span> buf<span class="op">.</span>String<span class="op">())</span></span>
+<span id="cb207-13"><a href="#cb207-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>So how does this help us simplify the code after we've written it?</p>
+<p>Well, because we've only written a test for the <em>behaviour</em> and not the <em>implementation</em>, we can refactor as much as we want. As long as this test passes, we know the code is still doing the right thing.</p>
+<p>This is what TDD gives us: for a little bit of weirdness we get to refactor knowing that our changes aren't altering the behaviour of a piece of code. And that weirdness? Starting with the test instead of the code, taking small steps by writing tests that force us to write what we planned to write anyways – all these bits of weirdness get us to a stable state.</p>
+</section>
+</section>
+<section id="packages-defining-interfaces" class="level2" data-number="6.3">
+<h2 data-number="6.3"><span class="header-section-number">6.3</span> Packages Defining Interfaces</h2>
+<p>We talked about where to define an interface in a previous section. Because we use interfaces to define what behaviour a function or class requires, interfaces should be defined within the package where they're used.</p>
+<p>There are, of course, some caveats to this rule.</p>
 <p>A good example is the <code class="verbatim">Reader</code> interface provided by the <code class="verbatim">io</code> package:</p>
-<div class="sourceCode" id="cb200"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb200-1"><a href="#cb200-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> Reader <span class="kw">interface</span> <span class="op">{</span></span>
-<span id="cb200-2"><a href="#cb200-2" aria-hidden="true" tabindex="-1"></a> Read<span class="op">(</span>p <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(</span>n <span class="dt">int</span><span class="op">,</span> err <span class="dt">error</span><span class="op">)</span></span>
-<span id="cb200-3"><a href="#cb200-3" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb208"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb208-1"><a href="#cb208-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> Reader <span class="kw">interface</span> <span class="op">{</span></span>
+<span id="cb208-2"><a href="#cb208-2" aria-hidden="true" tabindex="-1"></a> Read<span class="op">(</span>p <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(</span>n <span class="dt">int</span><span class="op">,</span> err <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb208-3"><a href="#cb208-3" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>For those still new to Go: a <code class="verbatim">Reader</code> is an interface that allows users to pass in a slice of bytes that data will be read into (it's assumed you either don't care about what's currently in the slice or that it's empty). It returns how many bytes were written to the slice, as well as an error to signal an error – or an <code class="verbatim">io.EOF</code> error to signal there's nothing more to read.</p>
 <p>I'm not going to dive into why this interface was designed this way, there are plenty of other articles that will do so. For example, <a href="https://dave.cheney.net/2019/09/05/dont-force-allocations-on-the-callers-of-your-api">why do you pass in a byte slice instead of <code class="verbatim">Read</code> returning one</a>?</p>
 <p>Instead, let's talk about why the <code class="verbatim">io</code> package defines one <strong>at all</strong>.</p>
@@ -3829,178 +4023,178 @@ exiting!
 <p>Well, the immediately obvious answer is that <code class="verbatim">io.Reader</code> already exists, and code re-use is good, so bing bang boom we're using <code class="verbatim">io.Reader</code>.</p>
 <p>…Right?</p>
 <p>Well, there's more to it than that. What if the team behind the <code class="verbatim">image</code> package decided they made their own, slightly different interface:</p>
-<div class="sourceCode" id="cb201"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb201-1"><a href="#cb201-1" aria-hidden="true" tabindex="-1"></a><span class="co">// ImageReader reads `lim` bytes into `b`. Returns `image.End`</span></span>
-<span id="cb201-2"><a href="#cb201-2" aria-hidden="true" tabindex="-1"></a><span class="co">// if no more bytes can be read, nil if there is no error, and</span></span>
-<span id="cb201-3"><a href="#cb201-3" aria-hidden="true" tabindex="-1"></a><span class="co">// a non-nil, non-`image.End` for all other cases.</span></span>
-<span id="cb201-4"><a href="#cb201-4" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> ImageReader <span class="kw">interface</span> <span class="op">{</span></span>
-<span id="cb201-5"><a href="#cb201-5" aria-hidden="true" tabindex="-1"></a>  Read<span class="op">(</span>b <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> lim <span class="dt">int</span><span class="op">)</span> <span class="dt">error</span></span>
-<span id="cb201-6"><a href="#cb201-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb209"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb209-1"><a href="#cb209-1" aria-hidden="true" tabindex="-1"></a><span class="co">// ImageReader reads `lim` bytes into `b`. Returns `image.End`</span></span>
+<span id="cb209-2"><a href="#cb209-2" aria-hidden="true" tabindex="-1"></a><span class="co">// if no more bytes can be read, nil if there is no error, and</span></span>
+<span id="cb209-3"><a href="#cb209-3" aria-hidden="true" tabindex="-1"></a><span class="co">// a non-nil, non-`image.End` for all other cases.</span></span>
+<span id="cb209-4"><a href="#cb209-4" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> ImageReader <span class="kw">interface</span> <span class="op">{</span></span>
+<span id="cb209-5"><a href="#cb209-5" aria-hidden="true" tabindex="-1"></a>  Read<span class="op">(</span>b <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> lim <span class="dt">int</span><span class="op">)</span> <span class="dt">error</span></span>
+<span id="cb209-6"><a href="#cb209-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>So what does this mean for code that wants to see how big a .webp is by using <code class="verbatim">DecodeConfig</code>? What if the image is being read over the network? What the image has been compressed? What if…?</p>
 <p>Think about how easy it is to compose all those cases because of how ubiquitous <code class="verbatim">io.Reader</code> is:</p>
-<div class="sourceCode" id="cb202"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb202-1"><a href="#cb202-1" aria-hidden="true" tabindex="-1"></a>conf<span class="op">,</span> err <span class="op">:=</span> webp<span class="op">.</span>DecodeConfig<span class="op">(</span>zip<span class="op">.</span>Decompressor<span class="op">(</span>req<span class="op">.</span>Body<span class="op">))</span></span></code></pre></div>
-<p>Now, what if each of those had it's own unique reader? How do you transform a <code class="verbatim">=http.Request#Body</code> into something <code class="verbatim">zip.Decompressor</code> can accept? How do you turn <em>that</em> into something <code class="verbatim">webp.DecodeConfig</code> can accept?</p>
+<div class="sourceCode" id="cb210"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb210-1"><a href="#cb210-1" aria-hidden="true" tabindex="-1"></a>conf<span class="op">,</span> err <span class="op">:=</span> webp<span class="op">.</span>DecodeConfig<span class="op">(</span>zip<span class="op">.</span>Decompressor<span class="op">(</span>req<span class="op">.</span>Body<span class="op">))</span></span></code></pre></div>
+<p>Now, what if each of those had it's own unique reader? How do you transform a <code class="verbatim">http.Request#Body</code> into something <code class="verbatim">zip.Decompressor</code> can accept? How do you turn <em>that</em> into something <code class="verbatim">webp.DecodeConfig</code> can accept?</p>
 <p>By standardizing on the use of <code class="verbatim">io.Reader</code> as how bytes are read, it opens up thousands of ways to compose readers to accomplish what you're looking for.</p>
-An alternative way to think about this is that many packages <em>might have had</em> their own interfaces that looked like or performed the same function as <code class="verbatim">io.Reader</code> – and the Go team standardized on <code class="verbatim">io.Reader</code> as <strong>the</strong> interface defining how to read bytes, and put it in the <code class="verbatim">io</code> package.
+<p>An alternative way to think about this is that many packages <em>might have had</em> their own interfaces that looked like or performed the same function as <code class="verbatim">io.Reader</code> – and the Go team standardized on <code class="verbatim">io.Reader</code> as <strong>the</strong> interface defining how to read bytes, and put it in the <code class="verbatim">io</code> package.</p>
 </section>
-<section id="why-is-io.reader-an-example-of-great-interface-design" class="level2" data-number="6.3">
-<h2 data-number="6.3"><span class="header-section-number">6.3</span> Why is <code class="verbatim">io.Reader</code> an example of great interface design?</h2>
+<section id="why-is-io.reader-an-example-of-great-interface-design" class="level2" data-number="6.4">
+<h2 data-number="6.4"><span class="header-section-number">6.4</span> Why is <code class="verbatim">io.Reader</code> an example of great interface design?</h2>
 <p><code class="verbatim">io.Reader</code> is a great example of an interface, any design weirdness aside.</p>
 <p>So, why <strong>is</strong> <code class="verbatim">io.Reader</code> so great?</p>
 <p>Let's take a look at two functions that both do the same thing: read some bytes, looking for a specific set of bytes, and returning true as soon as that set of bytes is found.</p>
-<div class="sourceCode" id="cb203"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb203-1"><a href="#cb203-1" aria-hidden="true" tabindex="-1"></a><span class="kw">var</span> lookFor <span class="op">=</span> <span class="op">[]</span><span class="dt">byte</span><span class="op">{</span><span class="dv">0x68</span><span class="op">,</span> <span class="dv">0x65</span><span class="op">,</span> <span class="dv">0x6C</span><span class="op">,</span> <span class="dv">0x6C</span><span class="op">,</span> <span class="dv">0x6F</span><span class="op">,</span> <span class="dv">0x20</span><span class="op">,</span> <span class="dv">0x77</span><span class="op">,</span> <span class="dv">0x6F</span><span class="op">,</span> <span class="dv">0x72</span><span class="op">,</span> <span class="dv">0x6C</span><span class="op">,</span> <span class="dv">0x64</span><span class="op">}</span></span>
-<span id="cb203-2"><a href="#cb203-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-3"><a href="#cb203-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> FindInSlice<span class="op">(</span>b <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="dt">bool</span> <span class="op">{</span></span>
-<span id="cb203-4"><a href="#cb203-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">// do the check!</span></span>
-<span id="cb203-5"><a href="#cb203-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> bytes<span class="op">.</span>Contains<span class="op">(</span>b<span class="op">,</span> lookFor<span class="op">)</span></span>
-<span id="cb203-6"><a href="#cb203-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb203-7"><a href="#cb203-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-8"><a href="#cb203-8" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> FindInReader<span class="op">(</span>r io<span class="op">.</span>Reader<span class="op">)</span> <span class="dt">bool</span> <span class="op">{</span></span>
-<span id="cb203-9"><a href="#cb203-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">// create a buffer</span></span>
-<span id="cb203-10"><a href="#cb203-10" aria-hidden="true" tabindex="-1"></a>  buf <span class="op">:=</span> <span class="op">[]</span><span class="dt">byte</span><span class="op">{}</span></span>
-<span id="cb203-11"><a href="#cb203-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">// cache this so we&#39;re not doing each loop iteration</span></span>
-<span id="cb203-12"><a href="#cb203-12" aria-hidden="true" tabindex="-1"></a>  l <span class="op">:=</span> <span class="bu">len</span><span class="op">(</span>lookFor<span class="op">)</span></span>
-<span id="cb203-13"><a href="#cb203-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-14"><a href="#cb203-14" aria-hidden="true" tabindex="-1"></a>  <span class="co">// our temporary buffer</span></span>
-<span id="cb203-15"><a href="#cb203-15" aria-hidden="true" tabindex="-1"></a>  t <span class="op">:=</span> <span class="bu">make</span><span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> l<span class="op">*</span><span class="dv">2</span><span class="op">)</span></span>
-<span id="cb203-16"><a href="#cb203-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-17"><a href="#cb203-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">for</span> <span class="op">{</span></span>
-<span id="cb203-18"><a href="#cb203-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// read some bytes</span></span>
-<span id="cb203-19"><a href="#cb203-19" aria-hidden="true" tabindex="-1"></a>    n<span class="op">,</span> err <span class="op">:=</span> r<span class="op">.</span>Read<span class="op">(</span>t<span class="op">)</span></span>
-<span id="cb203-20"><a href="#cb203-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> err <span class="op">==</span> io<span class="op">.</span>EOF <span class="op">{</span></span>
-<span id="cb203-21"><a href="#cb203-21" aria-hidden="true" tabindex="-1"></a>      buf <span class="op">=</span> <span class="bu">append</span><span class="op">(</span>buf<span class="op">,</span> t<span class="op">...)</span></span>
-<span id="cb203-22"><a href="#cb203-22" aria-hidden="true" tabindex="-1"></a>      <span class="kw">break</span></span>
-<span id="cb203-23"><a href="#cb203-23" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb203-24"><a href="#cb203-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb203-25"><a href="#cb203-25" aria-hidden="true" tabindex="-1"></a>      <span class="kw">return</span> <span class="ot">false</span></span>
-<span id="cb203-26"><a href="#cb203-26" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb203-27"><a href="#cb203-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-28"><a href="#cb203-28" aria-hidden="true" tabindex="-1"></a>    buf <span class="op">=</span> <span class="bu">append</span><span class="op">(</span>buf<span class="op">,</span> t<span class="op">...)</span></span>
-<span id="cb203-29"><a href="#cb203-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-30"><a href="#cb203-30" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> bytes<span class="op">.</span>Contains<span class="op">(</span>buf<span class="op">,</span> lookFor<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb203-31"><a href="#cb203-31" aria-hidden="true" tabindex="-1"></a>      <span class="kw">return</span> <span class="ot">true</span></span>
-<span id="cb203-32"><a href="#cb203-32" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb203-33"><a href="#cb203-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-34"><a href="#cb203-34" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="bu">len</span><span class="op">(</span>buf<span class="op">)</span> <span class="op">&gt;</span> l<span class="op">+</span>n <span class="op">{</span></span>
-<span id="cb203-35"><a href="#cb203-35" aria-hidden="true" tabindex="-1"></a>      buf <span class="op">=</span> buf<span class="op">[</span>l <span class="op">:</span> l<span class="op">+</span>n<span class="op">]</span></span>
-<span id="cb203-36"><a href="#cb203-36" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb203-37"><a href="#cb203-37" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb203-38"><a href="#cb203-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb203-39"><a href="#cb203-39" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> bytes<span class="op">.</span>Contains<span class="op">(</span>buf<span class="op">,</span> lookFor<span class="op">)</span></span>
-<span id="cb203-40"><a href="#cb203-40" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb211"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb211-1"><a href="#cb211-1" aria-hidden="true" tabindex="-1"></a><span class="kw">var</span> lookFor <span class="op">=</span> <span class="op">[]</span><span class="dt">byte</span><span class="op">{</span><span class="dv">0x68</span><span class="op">,</span> <span class="dv">0x65</span><span class="op">,</span> <span class="dv">0x6C</span><span class="op">,</span> <span class="dv">0x6C</span><span class="op">,</span> <span class="dv">0x6F</span><span class="op">,</span> <span class="dv">0x20</span><span class="op">,</span> <span class="dv">0x77</span><span class="op">,</span> <span class="dv">0x6F</span><span class="op">,</span> <span class="dv">0x72</span><span class="op">,</span> <span class="dv">0x6C</span><span class="op">,</span> <span class="dv">0x64</span><span class="op">}</span></span>
+<span id="cb211-2"><a href="#cb211-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-3"><a href="#cb211-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> FindInSlice<span class="op">(</span>b <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="dt">bool</span> <span class="op">{</span></span>
+<span id="cb211-4"><a href="#cb211-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">// do the check!</span></span>
+<span id="cb211-5"><a href="#cb211-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> bytes<span class="op">.</span>Contains<span class="op">(</span>b<span class="op">,</span> lookFor<span class="op">)</span></span>
+<span id="cb211-6"><a href="#cb211-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb211-7"><a href="#cb211-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-8"><a href="#cb211-8" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> FindInReader<span class="op">(</span>r io<span class="op">.</span>Reader<span class="op">)</span> <span class="dt">bool</span> <span class="op">{</span></span>
+<span id="cb211-9"><a href="#cb211-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">// create a buffer</span></span>
+<span id="cb211-10"><a href="#cb211-10" aria-hidden="true" tabindex="-1"></a>  buf <span class="op">:=</span> <span class="op">[]</span><span class="dt">byte</span><span class="op">{}</span></span>
+<span id="cb211-11"><a href="#cb211-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">// cache this so we&#39;re not doing each loop iteration</span></span>
+<span id="cb211-12"><a href="#cb211-12" aria-hidden="true" tabindex="-1"></a>  l <span class="op">:=</span> <span class="bu">len</span><span class="op">(</span>lookFor<span class="op">)</span></span>
+<span id="cb211-13"><a href="#cb211-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-14"><a href="#cb211-14" aria-hidden="true" tabindex="-1"></a>  <span class="co">// our temporary buffer</span></span>
+<span id="cb211-15"><a href="#cb211-15" aria-hidden="true" tabindex="-1"></a>  t <span class="op">:=</span> <span class="bu">make</span><span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> l<span class="op">*</span><span class="dv">2</span><span class="op">)</span></span>
+<span id="cb211-16"><a href="#cb211-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-17"><a href="#cb211-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">for</span> <span class="op">{</span></span>
+<span id="cb211-18"><a href="#cb211-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// read some bytes</span></span>
+<span id="cb211-19"><a href="#cb211-19" aria-hidden="true" tabindex="-1"></a>    n<span class="op">,</span> err <span class="op">:=</span> r<span class="op">.</span>Read<span class="op">(</span>t<span class="op">)</span></span>
+<span id="cb211-20"><a href="#cb211-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> err <span class="op">==</span> io<span class="op">.</span>EOF <span class="op">{</span></span>
+<span id="cb211-21"><a href="#cb211-21" aria-hidden="true" tabindex="-1"></a>      buf <span class="op">=</span> <span class="bu">append</span><span class="op">(</span>buf<span class="op">,</span> t<span class="op">...)</span></span>
+<span id="cb211-22"><a href="#cb211-22" aria-hidden="true" tabindex="-1"></a>      <span class="kw">break</span></span>
+<span id="cb211-23"><a href="#cb211-23" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb211-24"><a href="#cb211-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb211-25"><a href="#cb211-25" aria-hidden="true" tabindex="-1"></a>      <span class="kw">return</span> <span class="ot">false</span></span>
+<span id="cb211-26"><a href="#cb211-26" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb211-27"><a href="#cb211-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-28"><a href="#cb211-28" aria-hidden="true" tabindex="-1"></a>    buf <span class="op">=</span> <span class="bu">append</span><span class="op">(</span>buf<span class="op">,</span> t<span class="op">...)</span></span>
+<span id="cb211-29"><a href="#cb211-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-30"><a href="#cb211-30" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> bytes<span class="op">.</span>Contains<span class="op">(</span>buf<span class="op">,</span> lookFor<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb211-31"><a href="#cb211-31" aria-hidden="true" tabindex="-1"></a>      <span class="kw">return</span> <span class="ot">true</span></span>
+<span id="cb211-32"><a href="#cb211-32" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb211-33"><a href="#cb211-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-34"><a href="#cb211-34" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="bu">len</span><span class="op">(</span>buf<span class="op">)</span> <span class="op">&gt;</span> l<span class="op">+</span>n <span class="op">{</span></span>
+<span id="cb211-35"><a href="#cb211-35" aria-hidden="true" tabindex="-1"></a>      buf <span class="op">=</span> buf<span class="op">[</span>l <span class="op">:</span> l<span class="op">+</span>n<span class="op">]</span></span>
+<span id="cb211-36"><a href="#cb211-36" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb211-37"><a href="#cb211-37" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb211-38"><a href="#cb211-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-39"><a href="#cb211-39" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> bytes<span class="op">.</span>Contains<span class="op">(</span>buf<span class="op">,</span> lookFor<span class="op">)</span></span>
+<span id="cb211-40"><a href="#cb211-40" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>At first the one that takes <code class="verbatim">[]byte</code> is the clear winner, right? But think about how you can use both functions.</p>
 <p>For the first one, you have to prepare a slice of all the bytes you want to check before you can make the check. What if you're waiting on bytes from a huge file, or from a network connection?</p>
 <p>The second function that takes <code class="verbatim">io.Reader</code> is larger; that's not something anyone could argue and still be considered sane. However, it is a method that won't require many changes to get it to work with other byte sources. Also, it removes some of the responsibility from the caller to get everything in order. Many libraries return structs that fulfill the <code class="verbatim">io.Reader</code> interface; not having to use <code class="verbatim">io.ReadAll</code> first to get the byte slice is less code to write – and more memory efficient.</p>
 <p>For example, many object storage libraries provide an <code class="verbatim">io.Reader</code> that lets you read chunks of bytes from an object. If you're reading bytes from an object store, there's a good chance you're paying for that operation ( even if it's only fractions of a penny ). In such cases, wouldn't you want to be able to return as soon as you've found the bytes you want, rather than having to read all of the bytes – no matter how many or how long that takes – using <code class="verbatim">io.ReadAll</code>?</p>
 <p>Additionally, the second function works with <em>anything</em> that implements that interface. Want to use a <code class="verbatim">bytes.Buffer</code>? Go nuts. Got a file handle you want to read from? That works too! Maybe you've got an API client that provides a struct that fulfills <code class="verbatim">io.Reader</code> for reading data over the network – just pass that struct into <code class="verbatim">FindInReader</code> and you're good to go! So while using the interface did require writing more code <em>at first</em>, by using an interface you've allowed the code to work with anything that fulfills the interface instead of having to write a new function for each thing you want to see if it contains 'hello world'.</p>
-<section id="another-io.readall-example" class="level5" data-number="6.3.0.0.1">
-<h5 data-number="6.3.0.0.1"><span class="header-section-number">6.3.0.0.1</span> Another <code class="verbatim">io.ReadAll</code> Example</h5>
+<section id="another-io.readall-example" class="level3" data-number="6.4.1">
+<h3 data-number="6.4.1"><span class="header-section-number">6.4.1</span> Another <code class="verbatim">io.ReadAll</code> Example</h3>
 <p>If you still like <code class="verbatim">io.ReadAll</code>, think about what's involved in uploading an image.</p>
 <p>What's more memory efficient, <code class="verbatim">io.ReadAll</code>:</p>
-<div class="sourceCode" id="cb204"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb204-1"><a href="#cb204-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> handle<span class="op">(</span>w http<span class="op">.</span>ResponseWriter<span class="op">,</span> r <span class="op">*</span>http<span class="op">.</span>Request<span class="op">){</span></span>
-<span id="cb204-2"><a href="#cb204-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">defer</span> r<span class="op">.</span>Body<span class="op">.</span>Close<span class="op">()</span></span>
-<span id="cb204-3"><a href="#cb204-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb204-4"><a href="#cb204-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Imagine there&#39;s code here that gets the output file ready,</span></span>
-<span id="cb204-5"><a href="#cb204-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">// probably by creating a file handle pointing to an empty file in</span></span>
-<span id="cb204-6"><a href="#cb204-6" aria-hidden="true" tabindex="-1"></a>  <span class="co">// a temporary directory.</span></span>
-<span id="cb204-7"><a href="#cb204-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb204-8"><a href="#cb204-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ...how big is the image?</span></span>
-<span id="cb204-9"><a href="#cb204-9" aria-hidden="true" tabindex="-1"></a>  bits<span class="op">,</span> err <span class="op">:=</span> io<span class="op">.</span>ReadAll<span class="op">(</span>r<span class="op">.</span>Body<span class="op">)</span></span>
-<span id="cb204-10"><a href="#cb204-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb204-11"><a href="#cb204-11" aria-hidden="true" tabindex="-1"></a>    handleError<span class="op">(</span>err<span class="op">)</span></span>
-<span id="cb204-12"><a href="#cb204-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span></span>
-<span id="cb204-13"><a href="#cb204-13" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb204-14"><a href="#cb204-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb204-15"><a href="#cb204-15" aria-hidden="true" tabindex="-1"></a>  err <span class="op">=</span> writeToFile<span class="op">(</span>bits<span class="op">,</span> tmp<span class="op">)</span></span>
-<span id="cb204-16"><a href="#cb204-16" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb204-17"><a href="#cb204-17" aria-hidden="true" tabindex="-1"></a>    handleError<span class="op">(</span>err<span class="op">)</span></span>
-<span id="cb204-18"><a href="#cb204-18" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb204-19"><a href="#cb204-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb204-20"><a href="#cb204-20" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Maybe more stuff happens, sending the name of the file somewhere so it can</span></span>
-<span id="cb204-21"><a href="#cb204-21" aria-hidden="true" tabindex="-1"></a>  <span class="co">// get processed ( resizing an image, parsing text, whatever )</span></span>
-<span id="cb204-22"><a href="#cb204-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb212"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb212-1"><a href="#cb212-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> handle<span class="op">(</span>w http<span class="op">.</span>ResponseWriter<span class="op">,</span> r <span class="op">*</span>http<span class="op">.</span>Request<span class="op">){</span></span>
+<span id="cb212-2"><a href="#cb212-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">defer</span> r<span class="op">.</span>Body<span class="op">.</span>Close<span class="op">()</span></span>
+<span id="cb212-3"><a href="#cb212-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb212-4"><a href="#cb212-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Imagine there&#39;s code here that gets the output file ready,</span></span>
+<span id="cb212-5"><a href="#cb212-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">// probably by creating a file handle pointing to an empty file in</span></span>
+<span id="cb212-6"><a href="#cb212-6" aria-hidden="true" tabindex="-1"></a>  <span class="co">// a temporary directory.</span></span>
+<span id="cb212-7"><a href="#cb212-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb212-8"><a href="#cb212-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ...how big is the image?</span></span>
+<span id="cb212-9"><a href="#cb212-9" aria-hidden="true" tabindex="-1"></a>  bits<span class="op">,</span> err <span class="op">:=</span> io<span class="op">.</span>ReadAll<span class="op">(</span>r<span class="op">.</span>Body<span class="op">)</span></span>
+<span id="cb212-10"><a href="#cb212-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb212-11"><a href="#cb212-11" aria-hidden="true" tabindex="-1"></a>    handleError<span class="op">(</span>err<span class="op">)</span></span>
+<span id="cb212-12"><a href="#cb212-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span></span>
+<span id="cb212-13"><a href="#cb212-13" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb212-14"><a href="#cb212-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb212-15"><a href="#cb212-15" aria-hidden="true" tabindex="-1"></a>  err <span class="op">=</span> writeToFile<span class="op">(</span>bits<span class="op">,</span> tmp<span class="op">)</span></span>
+<span id="cb212-16"><a href="#cb212-16" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb212-17"><a href="#cb212-17" aria-hidden="true" tabindex="-1"></a>    handleError<span class="op">(</span>err<span class="op">)</span></span>
+<span id="cb212-18"><a href="#cb212-18" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb212-19"><a href="#cb212-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb212-20"><a href="#cb212-20" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Maybe more stuff happens, sending the name of the file somewhere so it can</span></span>
+<span id="cb212-21"><a href="#cb212-21" aria-hidden="true" tabindex="-1"></a>  <span class="co">// get processed ( resizing an image, parsing text, whatever )</span></span>
+<span id="cb212-22"><a href="#cb212-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>…or this:</p>
-<div class="sourceCode" id="cb205"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb205-1"><a href="#cb205-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> handle<span class="op">(</span>w http<span class="op">.</span>ResponseWriter<span class="op">,</span> r <span class="op">*</span>http<span class="op">.</span>Request<span class="op">){</span></span>
-<span id="cb205-2"><a href="#cb205-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">defer</span> r<span class="op">.</span>Body<span class="op">.</span>Close<span class="op">()</span></span>
-<span id="cb205-3"><a href="#cb205-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb205-4"><a href="#cb205-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">// same prep code</span></span>
-<span id="cb205-5"><a href="#cb205-5" aria-hidden="true" tabindex="-1"></a>  err <span class="op">=</span> writeToFile<span class="op">(</span>tmp<span class="op">,</span> r<span class="op">.</span>Body<span class="op">)</span></span>
-<span id="cb205-6"><a href="#cb205-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb205-7"><a href="#cb205-7" aria-hidden="true" tabindex="-1"></a>    handleError<span class="op">(</span>w<span class="op">,</span> err<span class="op">)</span></span>
-<span id="cb205-8"><a href="#cb205-8" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb205-9"><a href="#cb205-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb205-10"><a href="#cb205-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">// same post-writing code</span></span>
-<span id="cb205-11"><a href="#cb205-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb213"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb213-1"><a href="#cb213-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> handle<span class="op">(</span>w http<span class="op">.</span>ResponseWriter<span class="op">,</span> r <span class="op">*</span>http<span class="op">.</span>Request<span class="op">){</span></span>
+<span id="cb213-2"><a href="#cb213-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">defer</span> r<span class="op">.</span>Body<span class="op">.</span>Close<span class="op">()</span></span>
+<span id="cb213-3"><a href="#cb213-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb213-4"><a href="#cb213-4" aria-hidden="true" tabindex="-1"></a>  <span class="co">// same prep code</span></span>
+<span id="cb213-5"><a href="#cb213-5" aria-hidden="true" tabindex="-1"></a>  err <span class="op">=</span> writeToFile<span class="op">(</span>tmp<span class="op">,</span> r<span class="op">.</span>Body<span class="op">)</span></span>
+<span id="cb213-6"><a href="#cb213-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb213-7"><a href="#cb213-7" aria-hidden="true" tabindex="-1"></a>    handleError<span class="op">(</span>w<span class="op">,</span> err<span class="op">)</span></span>
+<span id="cb213-8"><a href="#cb213-8" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb213-9"><a href="#cb213-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb213-10"><a href="#cb213-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">// same post-writing code</span></span>
+<span id="cb213-11"><a href="#cb213-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Previously, <code class="verbatim">writeToFile</code> took the bytes and put them in a <code class="verbatim">bytes.Buffer</code>, and then used <code class="verbatim">io.Copy</code> to write that buffer to a file. Now it's just using <code class="verbatim">io.Copy</code>.</p>
 Whatever is being uploaded spends very little time in memory. Instead, almost as quickly as we read a byte we're writing it.
 </section>
 </section>
-<section id="api-design-google-vs-amazon" class="level2" data-number="6.4">
-<h2 data-number="6.4"><span class="header-section-number">6.4</span> API Design, Google vs Amazon</h2>
+<section id="api-design-google-vs-amazon" class="level2" data-number="6.5">
+<h2 data-number="6.5"><span class="header-section-number">6.5</span> API Design, Google vs Amazon</h2>
 <p>A good way to show everything we've been talking about is to take a look at something where having <code class="verbatim">io.Reader</code> and <code class="verbatim">io.Writer</code> is very handy.</p>
 <p>Object storage APIs. Think AWS S3, or Google Storage. These are things with 'buckets' and 'objects' – no files or directories.</p>
 <p>Let's take a look at how you upload some data to object storage for Amazon's S3 using their Go SDK:</p>
-<div class="sourceCode" id="cb206"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb206-1"><a href="#cb206-1" aria-hidden="true" tabindex="-1"></a><span class="co">// The session the S3 Uploader will use</span></span>
-<span id="cb206-2"><a href="#cb206-2" aria-hidden="true" tabindex="-1"></a>sess <span class="op">:=</span> session<span class="op">.</span>Must<span class="op">(</span>session<span class="op">.</span>NewSession<span class="op">())</span></span>
-<span id="cb206-3"><a href="#cb206-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb206-4"><a href="#cb206-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Create an uploader with the session and default options</span></span>
-<span id="cb206-5"><a href="#cb206-5" aria-hidden="true" tabindex="-1"></a>uploader <span class="op">:=</span> s3manager<span class="op">.</span>NewUploader<span class="op">(</span>sess<span class="op">)</span></span>
-<span id="cb206-6"><a href="#cb206-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb206-7"><a href="#cb206-7" aria-hidden="true" tabindex="-1"></a>f<span class="op">,</span> err  <span class="op">:=</span> os<span class="op">.</span>Open<span class="op">(</span>filename<span class="op">)</span></span>
-<span id="cb206-8"><a href="#cb206-8" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb206-9"><a href="#cb206-9" aria-hidden="true" tabindex="-1"></a>    fmt<span class="op">.</span>Printf<span class="op">(</span><span class="st">&quot;failed to open file %q, %w&quot;</span><span class="op">,</span> filename<span class="op">,</span> err<span class="op">)</span></span>
-<span id="cb206-10"><a href="#cb206-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb206-11"><a href="#cb206-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb206-12"><a href="#cb206-12" aria-hidden="true" tabindex="-1"></a><span class="co">// Upload the file to S3.</span></span>
-<span id="cb206-13"><a href="#cb206-13" aria-hidden="true" tabindex="-1"></a>result<span class="op">,</span> err <span class="op">:=</span> uploader<span class="op">.</span>Upload<span class="op">(&amp;</span>s3manager<span class="op">.</span>UploadInput<span class="op">{</span></span>
-<span id="cb206-14"><a href="#cb206-14" aria-hidden="true" tabindex="-1"></a>    Bucket<span class="op">:</span> aws<span class="op">.</span>String<span class="op">(</span>myBucket<span class="op">),</span></span>
-<span id="cb206-15"><a href="#cb206-15" aria-hidden="true" tabindex="-1"></a>    Key<span class="op">:</span>    aws<span class="op">.</span>String<span class="op">(</span>myString<span class="op">),</span></span>
-<span id="cb206-16"><a href="#cb206-16" aria-hidden="true" tabindex="-1"></a>    Body<span class="op">:</span>   f<span class="op">,</span></span>
-<span id="cb206-17"><a href="#cb206-17" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
-<span id="cb206-18"><a href="#cb206-18" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb206-19"><a href="#cb206-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
-<span id="cb206-20"><a href="#cb206-20" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb206-21"><a href="#cb206-21" aria-hidden="true" tabindex="-1"></a><span class="kw">return</span> <span class="ot">nil</span></span></code></pre></div>
+<div class="sourceCode" id="cb214"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb214-1"><a href="#cb214-1" aria-hidden="true" tabindex="-1"></a><span class="co">// The session the S3 Uploader will use</span></span>
+<span id="cb214-2"><a href="#cb214-2" aria-hidden="true" tabindex="-1"></a>sess <span class="op">:=</span> session<span class="op">.</span>Must<span class="op">(</span>session<span class="op">.</span>NewSession<span class="op">())</span></span>
+<span id="cb214-3"><a href="#cb214-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb214-4"><a href="#cb214-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Create an uploader with the session and default options</span></span>
+<span id="cb214-5"><a href="#cb214-5" aria-hidden="true" tabindex="-1"></a>uploader <span class="op">:=</span> s3manager<span class="op">.</span>NewUploader<span class="op">(</span>sess<span class="op">)</span></span>
+<span id="cb214-6"><a href="#cb214-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb214-7"><a href="#cb214-7" aria-hidden="true" tabindex="-1"></a>f<span class="op">,</span> err  <span class="op">:=</span> os<span class="op">.</span>Open<span class="op">(</span>filename<span class="op">)</span></span>
+<span id="cb214-8"><a href="#cb214-8" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb214-9"><a href="#cb214-9" aria-hidden="true" tabindex="-1"></a>    fmt<span class="op">.</span>Printf<span class="op">(</span><span class="st">&quot;failed to open file %q, %w&quot;</span><span class="op">,</span> filename<span class="op">,</span> err<span class="op">)</span></span>
+<span id="cb214-10"><a href="#cb214-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb214-11"><a href="#cb214-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb214-12"><a href="#cb214-12" aria-hidden="true" tabindex="-1"></a><span class="co">// Upload the file to S3.</span></span>
+<span id="cb214-13"><a href="#cb214-13" aria-hidden="true" tabindex="-1"></a>result<span class="op">,</span> err <span class="op">:=</span> uploader<span class="op">.</span>Upload<span class="op">(&amp;</span>s3manager<span class="op">.</span>UploadInput<span class="op">{</span></span>
+<span id="cb214-14"><a href="#cb214-14" aria-hidden="true" tabindex="-1"></a>    Bucket<span class="op">:</span> aws<span class="op">.</span>String<span class="op">(</span>myBucket<span class="op">),</span></span>
+<span id="cb214-15"><a href="#cb214-15" aria-hidden="true" tabindex="-1"></a>    Key<span class="op">:</span>    aws<span class="op">.</span>String<span class="op">(</span>myString<span class="op">),</span></span>
+<span id="cb214-16"><a href="#cb214-16" aria-hidden="true" tabindex="-1"></a>    Body<span class="op">:</span>   f<span class="op">,</span></span>
+<span id="cb214-17"><a href="#cb214-17" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb214-18"><a href="#cb214-18" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb214-19"><a href="#cb214-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
+<span id="cb214-20"><a href="#cb214-20" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb214-21"><a href="#cb214-21" aria-hidden="true" tabindex="-1"></a><span class="kw">return</span> <span class="ot">nil</span></span></code></pre></div>
 <p>Now Google:</p>
-<div class="sourceCode" id="cb207"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb207-1"><a href="#cb207-1" aria-hidden="true" tabindex="-1"></a>ctx <span class="op">:=</span> context<span class="op">.</span>Background<span class="op">()</span></span>
-<span id="cb207-2"><a href="#cb207-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb207-3"><a href="#cb207-3" aria-hidden="true" tabindex="-1"></a>client<span class="op">,</span> err <span class="op">:=</span> storage<span class="op">.</span>NewClient<span class="op">(</span>ctx<span class="op">)</span></span>
-<span id="cb207-4"><a href="#cb207-4" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb207-5"><a href="#cb207-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
-<span id="cb207-6"><a href="#cb207-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb207-7"><a href="#cb207-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb207-8"><a href="#cb207-8" aria-hidden="true" tabindex="-1"></a>writer <span class="op">:=</span> client<span class="op">.</span>Bucket<span class="op">(</span>bucketName<span class="op">).</span>Object<span class="op">(</span>objectFullName<span class="op">).</span>NewWriter<span class="op">(</span>ctx<span class="op">)</span></span>
-<span id="cb207-9"><a href="#cb207-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb207-10"><a href="#cb207-10" aria-hidden="true" tabindex="-1"></a>f<span class="op">,</span> err <span class="op">:=</span> os<span class="op">.</span>OpenFile<span class="op">(</span>name <span class="op">,</span> os<span class="op">.</span>O_RDONLY<span class="op">,</span> <span class="dv">0o644</span><span class="op">)</span></span>
-<span id="cb207-11"><a href="#cb207-11" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb207-12"><a href="#cb207-12" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
-<span id="cb207-13"><a href="#cb207-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb207-14"><a href="#cb207-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb207-15"><a href="#cb207-15" aria-hidden="true" tabindex="-1"></a>_<span class="op">,</span> err <span class="op">=</span> io<span class="op">.</span>Copy<span class="op">(</span>f<span class="op">,</span> writer<span class="op">)</span></span>
-<span id="cb207-16"><a href="#cb207-16" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb207-17"><a href="#cb207-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
-<span id="cb207-18"><a href="#cb207-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb207-19"><a href="#cb207-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb207-20"><a href="#cb207-20" aria-hidden="true" tabindex="-1"></a>err <span class="op">=</span> writer<span class="op">.</span>Close<span class="op">()</span></span>
-<span id="cb207-21"><a href="#cb207-21" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb207-22"><a href="#cb207-22" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
-<span id="cb207-23"><a href="#cb207-23" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb215"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb215-1"><a href="#cb215-1" aria-hidden="true" tabindex="-1"></a>ctx <span class="op">:=</span> context<span class="op">.</span>Background<span class="op">()</span></span>
+<span id="cb215-2"><a href="#cb215-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb215-3"><a href="#cb215-3" aria-hidden="true" tabindex="-1"></a>client<span class="op">,</span> err <span class="op">:=</span> storage<span class="op">.</span>NewClient<span class="op">(</span>ctx<span class="op">)</span></span>
+<span id="cb215-4"><a href="#cb215-4" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb215-5"><a href="#cb215-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
+<span id="cb215-6"><a href="#cb215-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb215-7"><a href="#cb215-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb215-8"><a href="#cb215-8" aria-hidden="true" tabindex="-1"></a>writer <span class="op">:=</span> client<span class="op">.</span>Bucket<span class="op">(</span>bucketName<span class="op">).</span>Object<span class="op">(</span>objectFullName<span class="op">).</span>NewWriter<span class="op">(</span>ctx<span class="op">)</span></span>
+<span id="cb215-9"><a href="#cb215-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb215-10"><a href="#cb215-10" aria-hidden="true" tabindex="-1"></a>f<span class="op">,</span> err <span class="op">:=</span> os<span class="op">.</span>OpenFile<span class="op">(</span>name <span class="op">,</span> os<span class="op">.</span>O_RDONLY<span class="op">,</span> <span class="dv">0o644</span><span class="op">)</span></span>
+<span id="cb215-11"><a href="#cb215-11" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb215-12"><a href="#cb215-12" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
+<span id="cb215-13"><a href="#cb215-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb215-14"><a href="#cb215-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb215-15"><a href="#cb215-15" aria-hidden="true" tabindex="-1"></a>_<span class="op">,</span> err <span class="op">=</span> io<span class="op">.</span>Copy<span class="op">(</span>f<span class="op">,</span> writer<span class="op">)</span></span>
+<span id="cb215-16"><a href="#cb215-16" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb215-17"><a href="#cb215-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
+<span id="cb215-18"><a href="#cb215-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb215-19"><a href="#cb215-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb215-20"><a href="#cb215-20" aria-hidden="true" tabindex="-1"></a>err <span class="op">=</span> writer<span class="op">.</span>Close<span class="op">()</span></span>
+<span id="cb215-21"><a href="#cb215-21" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb215-22"><a href="#cb215-22" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> err</span>
+<span id="cb215-23"><a href="#cb215-23" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>One thing to note really quickly: the type of <code class="verbatim">Body</code> in <code class="verbatim">s3manager.UploadInput</code> is <code class="verbatim">io.Reader</code>.</p>
 <p>So Amazon has you pass in an <code class="verbatim">io.Reader</code>, Google gives you an <code class="verbatim">io.Writer</code>.</p>
 <p>What change does this have on how you use these packages?</p>
 <p>Well, for one: if you want to upload bytes from multiple places to S3, you have to have all those bytes ready beforehand. You also have to do the whole upload all at once.</p>
 <p>So one thing you can't do with the S3 version is build a zip file made of multiple files from a multi-part POST without reading in all those bytes and arranging everything.</p>
 <p>With Google's API, you could pass that writer around. Hey, remember our <code class="verbatim">ProcessDataIntoOutput</code> function from earlier? This one:</p>
-<div class="sourceCode" id="cb208"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb208-1"><a href="#cb208-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> ProcessDataIntoOutput<span class="op">(</span>input io<span class="op">.</span>Reader<span class="op">,</span> output io<span class="op">.</span>Writer<span class="op">,</span> p processor<span class="op">)</span> <span class="dt">error</span> <span class="op">{</span></span>
-<span id="cb208-2"><a href="#cb208-2" aria-hidden="true" tabindex="-1"></a>  processed<span class="op">,</span> err <span class="op">:=</span> p<span class="op">.</span>Process<span class="op">(</span>input<span class="op">)</span></span>
-<span id="cb208-3"><a href="#cb208-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
-<span id="cb208-4"><a href="#cb208-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> fmt<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;unable to process data: %w&quot;</span><span class="op">,</span> err<span class="op">)</span></span>
-<span id="cb208-5"><a href="#cb208-5" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb208-6"><a href="#cb208-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb208-7"><a href="#cb208-7" aria-hidden="true" tabindex="-1"></a>  <span class="co">// is there something else that needs to happen here?</span></span>
-<span id="cb208-8"><a href="#cb208-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb208-9"><a href="#cb208-9" aria-hidden="true" tabindex="-1"></a>  _<span class="op">,</span> err <span class="op">=</span> io<span class="op">.</span>Copy<span class="op">(</span>processed<span class="op">,</span> output<span class="op">)</span></span>
-<span id="cb208-10"><a href="#cb208-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> fmt<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;unable to copy processed data to output: %w&quot;</span><span class="op">,</span> err<span class="op">)</span></span>
-<span id="cb208-11"><a href="#cb208-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb216"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb216-1"><a href="#cb216-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> ProcessDataIntoOutput<span class="op">(</span>input io<span class="op">.</span>Reader<span class="op">,</span> output io<span class="op">.</span>Writer<span class="op">,</span> p processor<span class="op">)</span> <span class="dt">error</span> <span class="op">{</span></span>
+<span id="cb216-2"><a href="#cb216-2" aria-hidden="true" tabindex="-1"></a>  processed<span class="op">,</span> err <span class="op">:=</span> p<span class="op">.</span>Process<span class="op">(</span>input<span class="op">)</span></span>
+<span id="cb216-3"><a href="#cb216-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb216-4"><a href="#cb216-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="ot">nil</span><span class="op">,</span> fmt<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;unable to process data: %w&quot;</span><span class="op">,</span> err<span class="op">)</span></span>
+<span id="cb216-5"><a href="#cb216-5" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb216-6"><a href="#cb216-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb216-7"><a href="#cb216-7" aria-hidden="true" tabindex="-1"></a>  <span class="co">// is there something else that needs to happen here?</span></span>
+<span id="cb216-8"><a href="#cb216-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb216-9"><a href="#cb216-9" aria-hidden="true" tabindex="-1"></a>  _<span class="op">,</span> err <span class="op">=</span> io<span class="op">.</span>Copy<span class="op">(</span>processed<span class="op">,</span> output<span class="op">)</span></span>
+<span id="cb216-10"><a href="#cb216-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">return</span> fmt<span class="op">.</span>Errorf<span class="op">(</span><span class="st">&quot;unable to copy processed data to output: %w&quot;</span><span class="op">,</span> err<span class="op">)</span></span>
+<span id="cb216-11"><a href="#cb216-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p>Hey, isn't that neat – without any changes to our code, we can write to reports into Google Storage.</p>
 <p>This isn't meant to be mean or anything; I'm not saying the developers who built the S3 portion of the Amazon Go SDK are stupid, or bad developers.</p>
 <p>What this section is <em>trying</em> to get across is the idea that everything we've been talking about is connected. How we design our APIs matters.</p>
@@ -4010,8 +4204,8 @@ Whatever is being uploaded spends very little time in memory. Instead, almost as
 <p>Now take a look at the implementation of <a href="https://github.com/aws/aws-sdk-go/blob/v1.43.29/service/s3/s3manager/upload.go#L274">Upload</a> for S3. Whoops, sorry, <a href="https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L296">UploadWithContext</a>. Oh, wait, no, have to go deeper into <a href="https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L376">uploader.upload</a>. Still a bit further to go, though, <a href="https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L576">multiuploader.upload</a> is what we want.</p>
 It's fair to say that Amazon has different goals. Obviously that's the case; Amazon has a <a href="https://github.com/aws/aws-sdk-go/blob/360c58a5df49fb4b631396d0ede689ba12179e2d/service/s3/s3manager/upload.go#L26">minimum size on what can be uploaded to S3</a>, Google doesn't. But that's not to say that Google doesn't have some similar logic to Amazon for some cases. But if they do, they've put that logic where it belongs; in their service.
 </section>
-<section id="tips-tricks-gotchas" class="level2" data-number="6.5">
-<h2 data-number="6.5"><span class="header-section-number">6.5</span> Tips, Tricks, &amp; Gotchas</h2>
+<section id="tips-tricks-gotchas" class="level2" data-number="6.6">
+<h2 data-number="6.6"><span class="header-section-number">6.6</span> Tips, Tricks, &amp; Gotchas</h2>
 <a href="https://dave.cheney.net/2019/06/10/constant-time">https://dave.cheney.net/2019/06/10/constant-time</a>
 </section>
 </section>

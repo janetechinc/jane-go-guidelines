@@ -166,8 +166,7 @@ first version.
 
 How do we get there?
 
-Tests!
-
+*** Tests!
 If we've been writing tests to validate the behaviour of this handler, then we
 can refactor to our hearts content.
 
@@ -180,7 +179,8 @@ choose from.
 
 And that's....
 
-[[https://camo.githubusercontent.com/e8ff9d17c3829387231401ee9c6694afc8d97f68db68607b65dbb4873016fc73/68747470733a2f2f67626c6f627363646e2e676974626f6f6b2e636f6d2f6173736574732532462d4c3954717835575361694534753234506b30352532462d4c6d79476349775946716c632d6b787a49475a2532462d4c58414a525362746d303270685263467655342532467265642d677265656e2d626c75652d676f70686572732d736d616c6c65722e706e673f616c743d6d65646961]]
+[[file:/assets/red-green-refactor.png]]
+[[https://quii.gitbook.io/learn-go-with-tests/][Source]]
 
 Red! Green! Refactor!
 
@@ -239,5 +239,73 @@ So what's the next step? Get the test to pass, of course.
 
 And our test pass.
 
+You're probably pretty frustrated by the thought of writing code this way. Why
+not just write the =Save= implementation? Why not barrel ahead, and write the code
+we've already got in our head?
 
+*** Discipline, Discipline, Discipline
+Because TDD is a discipline, one of several disciplines we should be trying to
+follow so that we can more easily write code that follows our principles.
+
+So maybe we can change how we think about this red-green-refactor process so
+that it doesn't feel so tedious.
+
+Well, we already know in our head what we want to write next. You've probably
+got some ideas in your head what then next steps would be; a pretty clear next
+step is the arguments that =Save= takes, and what it returns.
+
+How about this then. Don't think tests as something you write so you can move
+onto the fun part: writing code. Instead, think of tests as the thing you write
+that /forces/ you to write the code you were already planning to write
+anyways. This way we get into a positive feedback loop: think about what we want
+to do next; write a test that forces us to write the smallest version of what we
+planed to write; then to actually write the code to pass the test.
+
+So the next update to our test could look like this:
+
+#+begin_src go
+  func TestSave_OutputsCorrectly(t *testing.T){
+    buf := bytes.NewBuffer(nil)
+    var d *Document
+    var err error = Save(buf,d)
+
+    if err != nil {
+      t.Errorf("got error '%v', expected nil error")
+    }
+  }
+#+end_src
+
+At this point we can now implement most of the functionality of the =Save=
+function in order to get the test to pass.
+
+Furthermore, we can even use what was written to the buffer to test that =Save= is
+behaving correctly:
+
+#+begin_src go
+  func TestSave_OutputsCorrectly(t *testing.T){
+    expect := loadDataFixture(t, "testdata/expected-save-output")
+    buf := bytes.NewBuffer(nil)
+    var d *Document
+
+    var err error = Save(buf,d)
+    if err != nil {
+      t.Errorf("got error '%v', expected nil error")
+    }
+
+    //https://pkg.go.dev/github.com/stretchr/testify@v1.7.1/require#JSONEq
+    require.JSONEq(t, expect, buf.String())
+  }
+#+end_src
+
+So how does this help us simplify the code after we've written it?
+
+Well, because we've only written a test for the /behaviour/ and not the
+/implementation/, we can refactor as much as we want. As long as this test passes,
+we know the code is still doing the right thing.
+
+This is what TDD gives us: for a little bit of weirdness we get to refactor
+knowing that our changes aren't altering the behaviour of a piece of code. And
+that weirdness? Starting with the test instead of the code, taking small steps
+by writing tests that force us to write what we planned to write anyways -- all
+these bits of weirdness get us to a stable state.
 

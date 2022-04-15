@@ -61,6 +61,7 @@ expect your code to get stuck in review.
 
 * Apendixes
 #+INCLUDE: "notes/error-handling-too-many-behaviours.org"
+#+INCLUDE: "notes/simplify-code.org"
 #+INCLUDE: "notes/package-interfaces.org"
 #+INCLUDE: "notes/ioreader-is-great.org"
 #+INCLUDE: "notes/google-vs-amazon.org"
