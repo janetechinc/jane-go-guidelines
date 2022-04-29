@@ -1,3 +1,6 @@
+:PROPERTIES:
+:ID:       e846b335-8071-42e7-a9a0-3fdb6a9f027e
+:END:
 One of the things that's probably apparent to any of us who have worked in
 multiple languages is that each language has a set of what you could call "core
 principles". These principles aren't about what they /don't/ do; rather that when
